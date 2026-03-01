@@ -1,0 +1,21 @@
+# Rust
+/src-tauri/target/
+
+# Node
+node_modules/
+
+# Dev data
+dev-data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artefacts
+dist/

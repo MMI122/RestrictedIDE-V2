@@ -1,0 +1,14 @@
+{
+  "name": "restricted-ide-tauri",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Secure OS-Level Restricted IDE with Policy-Driven Kiosk Enforcement (Tauri)",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
