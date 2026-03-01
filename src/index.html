@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Restricted IDE</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ═══════════ TOOLBAR ═══════════ -->
+  <header id="toolbar">
+    <div class="toolbar-left">
+      <span class="app-title">Restricted IDE</span>
+    </div>
+    <div class="toolbar-center" id="toolbar-breadcrumbs"></div>
+    <div class="toolbar-right">
+      <button id="btn-run"   class="toolbar-btn run"  title="Run Code (Ctrl+Enter)">▶ Run</button>
+      <button id="btn-stop"  class="toolbar-btn stop" title="Stop">■ Stop</button>
+      <button id="btn-save"  class="toolbar-btn"      title="Save (Ctrl+S)">💾 Save</button>
+    </div>
+  </header>
+
+  <!-- ═══════════ MAIN LAYOUT ═══════════ -->
+  <div id="main-wrapper">
+    <!-- ACTIVITY BAR -->
+    <aside id="activity-bar">
+      <button class="activity-btn active" data-panel="explorer"  title="Explorer">📁</button>
+      <button class="activity-btn"        data-panel="search"    title="Search">🔍</button>
+      <button class="activity-btn"        data-panel="output"    title="Output">📟</button>
+    </aside>
+
+    <!-- SIDE PANEL -->
+    <aside id="side-panel">
+      <!-- Explorer view -->
+      <div class="panel-view active" id="panel-explorer">
+        <div class="panel-header">
+          <span>EXPLORER</span>
+          <div class="panel-actions">
+            <button id="btn-new-file"   title="New File">📄+</button>
+            <button id="btn-new-folder" title="New Folder">📁+</button>
+            <button id="btn-refresh"    title="Refresh">🔄</button>
+          </div>
+        </div>
+        <div id="file-tree" class="file-tree"></div>
+      </div>
+
+      <!-- Search view -->
+      <div class="panel-view" id="panel-search">
+        <div class="panel-header"><span>SEARCH</span></div>
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Search in files…" />
+          <button id="btn-search">Go</button>
+        </div>
+        <div id="search-results" class="search-results"></div>
+      </div>
+
+      <!-- Output (mini) view -->
+      <div class="panel-view" id="panel-output-side">
+        <div class="panel-header"><span>OUTPUT</span></div>
+        <div id="output-side" class="output-mini"></div>
+      </div>
+    </aside>
+
+    <!-- EDITOR AREA -->
+    <main id="editor-area">
+      <!-- TABS -->
+      <div id="tab-bar"></div>
+
+      <!-- CODE EDITOR -->
+      <div id="editor-container">
+        <div id="line-numbers"></div>
+        <div id="editor-wrapper">
+          <pre id="syntax-highlight" aria-hidden="true"></pre>
+          <textarea id="code-editor"
+                    spellcheck="false"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"></textarea>
+        </div>
+      </div>
+
+      <!-- WELCOME (shown when no file is open) -->
+      <div id="welcome" class="welcome">
+        <h2>Welcome to Restricted IDE</h2>
+        <p>Open a file from the explorer or create a new one.</p>
+        <p class="hint">Ctrl+S = save &nbsp;|&nbsp; Ctrl+Enter = run</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════ OUTPUT CONSOLE ═══════════ -->
+  <div id="output-bar">
+    <div id="output-resize-handle"></div>
+    <div class="output-header">
+      <span>OUTPUT</span>
+      <div>
+        <button id="btn-clear-output" title="Clear">🗑</button>
+        <button id="btn-toggle-output" title="Toggle Output">▼</button>
+      </div>
+    </div>
+    <div id="output-console"></div>
+    <div id="stdin-bar" class="hidden">
+      <input type="text" id="stdin-input" placeholder="Type input and press Enter…" />
+      <button id="btn-send-input">↵</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ STATUS BAR ═══════════ -->
+  <footer id="status-bar">
+    <span id="status-left">Ready</span>
+    <span id="status-right">
+      <span id="status-lang"></span>
+      <span id="status-line">Ln 1, Col 1</span>
+    </span>
+  </footer>
+
+  <!-- ═══════════ ADMIN DIALOG ═══════════ -->
+  <div id="admin-overlay" class="overlay hidden">
+    <div class="dialog admin-dialog">
+      <h3>🔐 Admin Login</h3>
+      <input type="password" id="admin-password" placeholder="Enter admin password" />
+      <div id="admin-error" class="error-msg"></div>
+      <div class="dialog-actions">
+        <button id="btn-admin-login">Login</button>
+        <button id="btn-admin-cancel">Cancel</button>
+      </div>
+      <!-- Admin panel (shown after login) -->
+      <div id="admin-panel" class="hidden">
+        <hr />
+        <h4>Admin Controls</h4>
+        <button id="btn-admin-exit" class="danger-btn">Exit Application</button>
+        <button id="btn-admin-logout">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ GENERIC PROMPT DIALOG ═══════════ -->
+  <div id="prompt-overlay" class="overlay hidden">
+    <div class="dialog">
+      <h3 id="prompt-title">Prompt</h3>
+      <input type="text" id="prompt-input" />
+      <div class="dialog-actions">
+        <button id="btn-prompt-ok">OK</button>
+        <button id="btn-prompt-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SCRIPTS ═══════════ -->
+  <script src="app.js"></script>
+  <script src="editor.js"></script>
+  <script src="file-tree.js"></script>
+  <script src="code-runner.js"></script>
+  <script src="search.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
