@@ -95,6 +95,14 @@ impl PolicyEngine {
         self.process_rule.validate(name)
     }
 
+    pub fn validate_file_size(&self, size: u64) -> ValidationResult {
+        let r = self.file_access_rule.validate_file_size(size);
+        if !r.allowed {
+            log::warn!("[Policy] File size rejected: {} bytes", size);
+        }
+        r
+    }
+
     pub fn validate_file_access(&self, path: &str, op: &str) -> ValidationResult {
         let r = self.file_access_rule.validate(path, op);
         if !r.allowed {

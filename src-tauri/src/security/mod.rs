@@ -3,6 +3,8 @@ pub mod clipboard_guard;
 #[cfg(target_os = "windows")]
 pub mod keyboard_hook;
 #[cfg(target_os = "windows")]
+pub mod mouse_confinement;
+#[cfg(target_os = "windows")]
 pub mod process_monitor;
 
 // Re-export start functions only on Windows; no-ops otherwise.

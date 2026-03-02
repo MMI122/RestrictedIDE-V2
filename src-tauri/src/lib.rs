@@ -29,10 +29,15 @@ pub struct RunningProcess {
 // ─── Tauri entry point ──────────────────────────────────────────────────────
 
 pub fn run() {
-    logger::init();
+    let boot_config = config::AppConfig::load();
+    logger::init(
+        &boot_config.paths.logs,
+        boot_config.logging.log_to_console,
+        boot_config.logging.log_to_file,
+    );
     log::info!("Starting Restricted IDE (Tauri)…");
 
-    let config = AppConfig::load();
+    let config = boot_config;
     let policy_engine = PolicyEngine::new(&config);
     let session = SessionManager::new(&config);
 
@@ -56,6 +61,7 @@ pub fn run() {
             commands::fs_commands::create_dir,
             commands::fs_commands::file_exists,
             commands::fs_commands::get_sandbox_path,
+            commands::fs_commands::rename_file,
             // Admin commands
             commands::admin_commands::admin_login,
             commands::admin_commands::admin_logout,
@@ -99,11 +105,20 @@ pub fn run() {
                     let combos = cfg.input_control.blocked_combinations.clone();
                     let blacklist = cfg.process_control.blacklist.clone();
                     let interval = cfg.process_control.monitor_interval_ms;
+                    let mouse_conf = cfg.input_control.mouse_confinement;
                     drop(cfg);
 
                     security::keyboard_hook::start_keyboard_hook(combos);
                     security::process_monitor::start_process_monitor(blacklist, interval);
                     security::clipboard_guard::start_clipboard_guard();
+
+                    // Confine mouse cursor after a short delay (window must be visible)
+                    if mouse_conf {
+                        std::thread::spawn(|| {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            security::mouse_confinement::confine_cursor_to_foreground();
+                        });
+                    }
                 }
             }
             Ok(())

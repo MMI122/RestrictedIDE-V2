@@ -515,3 +515,26 @@ button {
 .danger-btn:hover { opacity: 0.85; }
 
 .hidden { display: none !important; }
+
+/* ── Context Menu ──────────────────────────────────────────────────── */
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  padding: 4px 0;
+  font-size: 13px;
+}
+.context-menu-item {
+  padding: 6px 16px;
+  cursor: pointer;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.context-menu-item:hover {
+  background: var(--accent);
+  color: #fff;
+}

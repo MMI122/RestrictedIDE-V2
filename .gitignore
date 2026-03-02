@@ -19,3 +19,7 @@ Thumbs.db
 
 # Build artefacts
 dist/
+
+# Local planning/notes
+leftstill.md
+planning.md

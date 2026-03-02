@@ -61,6 +61,13 @@ pub fn read_file(file_path: String, state: State<'_, AppState>) -> Result<String
         if !r.allowed {
             return Err(r.reason.unwrap_or_else(|| "Access denied".into()));
         }
+        // Check file size before loading into memory
+        if let Ok(meta) = fs::metadata(&file_path) {
+            let sr = engine.validate_file_size(meta.len());
+            if !sr.allowed {
+                return Err(sr.reason.unwrap_or_else(|| "File too large".into()));
+            }
+        }
     }
     fs::read_to_string(&file_path).map_err(|e| format!("Cannot read file: {}", e))
 }
@@ -76,6 +83,15 @@ pub fn write_file(
         let r = engine.validate_file_access(&file_path, "write");
         if !r.allowed {
             return Err(r.reason.unwrap_or_else(|| "Access denied".into()));
+        }
+    }
+
+    // Validate file size before writing
+    {
+        let engine = state.policy_engine.lock().map_err(|e| e.to_string())?;
+        let sr = engine.validate_file_size(content.len() as u64);
+        if !sr.allowed {
+            return Err(sr.reason.unwrap_or_else(|| "File too large".into()));
         }
     }
 
@@ -124,6 +140,29 @@ pub fn create_dir(dir_path: String, state: State<'_, AppState>) -> Result<(), St
 #[tauri::command]
 pub fn file_exists(file_path: String) -> Result<bool, String> {
     Ok(Path::new(&file_path).exists())
+}
+
+#[tauri::command]
+pub fn rename_file(
+    old_path: String,
+    new_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let engine = state.policy_engine.lock().map_err(|e| e.to_string())?;
+        // Validate access to both paths
+        let r1 = engine.validate_file_access(&old_path, "write");
+        if !r1.allowed {
+            return Err(r1.reason.unwrap_or_else(|| "Access denied (source)".into()));
+        }
+        let r2 = engine.validate_file_access(&new_path, "write");
+        if !r2.allowed {
+            return Err(r2.reason.unwrap_or_else(|| "Access denied (destination)".into()));
+        }
+    }
+    fs::rename(&old_path, &new_path).map_err(|e| format!("Rename failed: {}", e))?;
+    log::info!("[AUDIT] FILE_RENAME: {} -> {}", old_path, new_path);
+    Ok(())
 }
 
 #[tauri::command]
