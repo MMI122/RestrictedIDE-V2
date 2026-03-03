@@ -51,6 +51,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Status
     setStatus('Ready');
+
+    // ── Security event listeners ──
+    listen('security://focus-change', (event) => {
+      const { has_focus, timestamp, consecutive_losses } = event.payload;
+      if (!has_focus) {
+        setStatus(`⚠️ Focus lost (#${consecutive_losses})`);
+        appendOutput('error', '⚠️ [Security] Window focus lost — violation #' + consecutive_losses);
+      } else {
+        setStatus('Focus regained');
+      }
+    });
   } catch (e) {
     console.error('Init error:', e);
     setStatus('Init error: ' + e);

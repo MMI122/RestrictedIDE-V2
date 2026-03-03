@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub fs_sandbox: FsSandboxConfig,
     pub admin: AdminConfig,
     pub logging: LoggingConfig,
+    pub security: SecurityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +75,20 @@ pub struct LoggingConfig {
     pub max_files: u32,
     pub log_to_console: bool,
     pub log_to_file: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    /// Enable VM / hypervisor detection check
+    pub vm_detection: bool,
+    /// What to do when multiple monitors detected: "ignore", "deny", "warn"
+    pub multi_monitor_action: String,
+    /// Enable SetWindowDisplayAffinity to block screenshots
+    pub screenshot_prevention: bool,
+    /// Enable focus-loss watchdog
+    pub focus_watchdog: bool,
+    /// Focus watchdog poll interval in ms
+    pub focus_poll_ms: u64,
 }
 
 // ─── Builder ────────────────────────────────────────────────────────────────
@@ -258,6 +273,13 @@ impl AppConfig {
                 max_files: 10,
                 log_to_console: is_dev,
                 log_to_file: true,
+            },
+            security: SecurityConfig {
+                vm_detection: !is_dev,
+                multi_monitor_action: if is_dev { "warn".into() } else { "deny".into() },
+                screenshot_prevention: !is_dev,
+                focus_watchdog: true,
+                focus_poll_ms: 500,
             },
         }
     }

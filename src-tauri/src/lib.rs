@@ -80,6 +80,10 @@ pub fn run() {
             commands::policy_commands::validate_keyboard,
             commands::policy_commands::get_policy,
             commands::policy_commands::search_in_files,
+            // Security
+            commands::security_commands::check_vm,
+            commands::security_commands::check_monitors,
+            commands::security_commands::get_security_status,
         ])
         .setup(move |app| {
             log::info!("Kiosk mode: {}", kiosk_enabled);
@@ -106,6 +110,7 @@ pub fn run() {
                     let blacklist = cfg.process_control.blacklist.clone();
                     let interval = cfg.process_control.monitor_interval_ms;
                     let mouse_conf = cfg.input_control.mouse_confinement;
+                    let security = cfg.security.clone();
                     drop(cfg);
 
                     security::keyboard_hook::start_keyboard_hook(combos);
@@ -117,6 +122,57 @@ pub fn run() {
                         std::thread::spawn(|| {
                             std::thread::sleep(std::time::Duration::from_millis(500));
                             security::mouse_confinement::confine_cursor_to_foreground();
+                        });
+                    }
+
+                    // ── Phase 2 security controls ──
+
+                    // VM detection
+                    if security.vm_detection {
+                        let vm_result = security::vm_detection::detect_vm();
+                        if vm_result.is_vm {
+                            log::error!(
+                                "[Security] VM detected with {} indicator(s) — session may be blocked",
+                                vm_result.indicators.len()
+                            );
+                        }
+                    }
+
+                    // Multi-monitor check
+                    if security.multi_monitor_action != "ignore" {
+                        let mon = security::monitor_detection::detect_monitors();
+                        if mon.count > 1 {
+                            log::warn!(
+                                "[Security] {} monitors detected — action: {}",
+                                mon.count,
+                                security.multi_monitor_action
+                            );
+                        }
+                    }
+
+                    // Screenshot prevention (apply after short delay so window is ready)
+                    if security.screenshot_prevention {
+                        let win_handle = app.get_webview_window("main");
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(800));
+                            if let Some(w) = win_handle {
+                                if let Ok(hwnd) = w.hwnd() {
+                                    use windows::Win32::Foundation::HWND;
+                                    let h = HWND(hwnd.0 as *mut _);
+                                    security::screenshot_guard::enable_screenshot_prevention(Some(h));
+                                }
+                            }
+                        });
+                    }
+
+                    // Focus-loss watchdog
+                    if security.focus_watchdog {
+                        let app_handle = app.handle().clone();
+                        let poll = security.focus_poll_ms;
+                        std::thread::spawn(move || {
+                            // Wait for window to be fully ready
+                            std::thread::sleep(std::time::Duration::from_millis(1000));
+                            security::focus_watchdog::start_focus_watchdog(app_handle, poll);
                         });
                     }
                 }
