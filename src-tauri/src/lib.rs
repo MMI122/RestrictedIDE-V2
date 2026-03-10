@@ -4,12 +4,17 @@ mod logger;
 mod policy;
 mod runtime;
 mod security;
+mod session;
 
 use config::AppConfig;
 use policy::engine::PolicyEngine;
 use runtime::session::SessionManager;
 use std::sync::Mutex;
 use tauri::Manager;
+
+use commands::session_commands::SessionState;
+use session::db::SessionDb;
+use std::sync::Arc;
 
 // ─── Shared application state ───────────────────────────────────────────────
 
@@ -43,6 +48,15 @@ pub fn run() {
 
     let kiosk_enabled = config.kiosk_mode.enabled;
 
+    // Initialize session database
+    let sessions_dir = config.paths.user_data.join("sessions");
+    let _ = std::fs::create_dir_all(&sessions_dir);
+    let db_path = sessions_dir.join("sessions.db");
+    let session_db = Arc::new(
+        SessionDb::open(&db_path).expect("Failed to open session database"),
+    );
+    let session_state = SessionState::new(session_db);
+
     let state = AppState {
         config: Mutex::new(config),
         policy_engine: Mutex::new(policy_engine),
@@ -52,6 +66,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(state)
+        .manage(session_state)
         .invoke_handler(tauri::generate_handler![
             // File-system commands
             commands::fs_commands::list_dir,
@@ -84,6 +99,23 @@ pub fn run() {
             commands::security_commands::check_vm,
             commands::security_commands::check_monitors,
             commands::security_commands::get_security_status,
+            // Session
+            commands::session_commands::create_session_cmd,
+            commands::session_commands::start_session_cmd,
+            commands::session_commands::end_session_cmd,
+            commands::session_commands::delete_session_cmd,
+            commands::session_commands::list_sessions_cmd,
+            commands::session_commands::join_session_cmd,
+            commands::session_commands::submit_code_cmd,
+            commands::session_commands::heartbeat_cmd,
+            commands::session_commands::get_session_status_cmd,
+            commands::session_commands::get_session_participants_cmd,
+            commands::session_commands::get_session_submissions_cmd,
+            commands::session_commands::get_session_violations_cmd,
+            commands::session_commands::broadcast_message_cmd,
+            commands::session_commands::kick_participant_cmd,
+            commands::session_commands::stop_lan_server_cmd,
+            commands::session_commands::get_current_role_cmd,
         ])
         .setup(move |app| {
             log::info!("Kiosk mode: {}", kiosk_enabled);
