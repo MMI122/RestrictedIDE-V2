@@ -66,6 +66,9 @@ const CountdownTimer = (() => {
     } else if (remaining <= 300) {
       // Last 5 minutes — warning (yellow)
       barTimer.classList.add('warning');
+    } else if (remaining <= 600) {
+      // Last 10 minutes — mild warning
+      barTimer.classList.add('warning');
     }
   }
 
