@@ -7,6 +7,47 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- ═══════════ LANDING SCREEN ═══════════ -->
+  <div id="landing-screen" class="landing-screen">
+    <div class="landing-container">
+      <div class="landing-logo">
+        <div class="logo-icon">⚡</div>
+        <h1 class="landing-title">Restricted IDE</h1>
+        <p class="landing-subtitle">Secure Exam & Interview Coding Platform</p>
+      </div>
+
+      <div class="landing-cards">
+        <!-- Create Session Card (Admin) -->
+        <div class="landing-card" id="card-create-session">
+          <div class="card-icon">🛡️</div>
+          <h2>Create Session</h2>
+          <p>Set up an exam or interview session as an administrator</p>
+          <button class="landing-btn primary" id="btn-goto-create">Create New Session</button>
+        </div>
+
+        <!-- Join Session Card (Student) -->
+        <div class="landing-card" id="card-join-session">
+          <div class="card-icon">🎓</div>
+          <h2>Join Session</h2>
+          <p>Enter a session code to join as a participant</p>
+          <button class="landing-btn secondary" id="btn-goto-join">Join Session</button>
+        </div>
+
+        <!-- Practice Mode Card -->
+        <div class="landing-card" id="card-practice">
+          <div class="card-icon">💻</div>
+          <h2>Practice Mode</h2>
+          <p>Use the IDE freely without session restrictions</p>
+          <button class="landing-btn outline" id="btn-goto-practice">Open IDE</button>
+        </div>
+      </div>
+
+      <div class="landing-footer">
+        <span class="landing-version">v0.1.0</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════ TOOLBAR ═══════════ -->
   <header id="toolbar">
     <div class="toolbar-left">
