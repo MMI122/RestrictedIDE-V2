@@ -857,3 +857,51 @@ button {
 .add-btn:hover {
   background: #0078d410;
 }
+
+/* ── Question cards (create form) ── */
+
+.question-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  position: relative;
+}
+
+.question-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.question-card-header span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.remove-question-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--error);
+  background: transparent;
+  border: 1px solid var(--error);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.remove-question-btn:hover {
+  background: #f4474720;
+}
+
+.question-card .form-row {
+  margin-top: 10px;
+}
+
+.question-card textarea {
+  min-height: 80px;
+  resize: vertical;
+  font-family: var(--font-ui);
+}
