@@ -48,6 +48,229 @@
     </div>
   </div>
 
+  <!-- ═══════════ CREATE SESSION SCREEN ═══════════ -->
+  <div id="create-session-screen" class="session-screen hidden">
+    <div class="session-form-container">
+      <div class="session-form-header">
+        <button class="back-btn" id="btn-back-from-create">← Back</button>
+        <h2>Create New Session</h2>
+      </div>
+
+      <form id="create-session-form" class="session-form">
+        <!-- Basic Info -->
+        <fieldset class="form-section">
+          <legend>Session Info</legend>
+          <div class="form-row">
+            <label for="session-name">Session Name</label>
+            <input type="text" id="session-name" placeholder="e.g. CSE101 Midterm" required />
+          </div>
+          <div class="form-row">
+            <label for="session-duration">Duration (minutes)</label>
+            <input type="number" id="session-duration" min="5" max="480" value="60" required />
+          </div>
+          <div class="form-row">
+            <label for="session-language">Allowed Language</label>
+            <select id="session-language">
+              <option value="cpp">C++</option>
+              <option value="c">C</option>
+              <option value="python">Python</option>
+              <option value="java">Java</option>
+              <option value="javascript">JavaScript</option>
+            </select>
+          </div>
+        </fieldset>
+
+        <!-- Questions -->
+        <fieldset class="form-section">
+          <legend>Questions</legend>
+          <div id="questions-list"></div>
+          <button type="button" class="add-btn" id="btn-add-question">+ Add Question</button>
+        </fieldset>
+
+        <!-- Security Options -->
+        <fieldset class="form-section">
+          <legend>Security</legend>
+          <div class="form-row checkbox-row">
+            <label><input type="checkbox" id="sec-vm-check" checked /> Block VMs</label>
+          </div>
+          <div class="form-row checkbox-row">
+            <label><input type="checkbox" id="sec-multi-monitor" checked /> Block Multi-Monitor</label>
+          </div>
+          <div class="form-row checkbox-row">
+            <label><input type="checkbox" id="sec-screenshot" checked /> Prevent Screenshots</label>
+          </div>
+          <div class="form-row checkbox-row">
+            <label><input type="checkbox" id="sec-focus-watch" checked /> Focus Watchdog</label>
+          </div>
+        </fieldset>
+
+        <!-- Connection -->
+        <fieldset class="form-section">
+          <legend>Connection</legend>
+          <div class="form-row">
+            <label for="session-mode">Mode</label>
+            <select id="session-mode">
+              <option value="lan">LAN (Local Network)</option>
+              <option value="online" disabled>Online (Coming Soon)</option>
+            </select>
+          </div>
+          <div class="form-row" id="lan-port-row">
+            <label for="session-port">LAN Port</label>
+            <input type="number" id="session-port" min="1024" max="65535" value="9876" />
+          </div>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="submit" class="landing-btn primary" id="btn-create-session">Create Session</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════ JOIN SESSION SCREEN ═══════════ -->
+  <div id="join-session-screen" class="session-screen hidden">
+    <div class="session-form-container">
+      <div class="session-form-header">
+        <button class="back-btn" id="btn-back-from-join">← Back</button>
+        <h2>Join Session</h2>
+      </div>
+
+      <form id="join-session-form" class="session-form">
+        <fieldset class="form-section">
+          <legend>Connection Details</legend>
+          <div class="form-row">
+            <label for="join-server">Server Address</label>
+            <input type="text" id="join-server" placeholder="e.g. 192.168.1.100:9876" required />
+          </div>
+          <div class="form-row">
+            <label for="join-code">Session Code</label>
+            <input type="text" id="join-code" placeholder="e.g. XK4F92" maxlength="6" style="text-transform: uppercase;" required />
+          </div>
+          <div class="form-row">
+            <label for="join-student-id">Student ID</label>
+            <input type="text" id="join-student-id" placeholder="e.g. 2101001" required />
+          </div>
+          <div class="form-row">
+            <label for="join-display-name">Display Name</label>
+            <input type="text" id="join-display-name" placeholder="Your name" required />
+          </div>
+        </fieldset>
+
+        <div id="join-error" class="form-error hidden"></div>
+        <div id="join-status" class="form-status hidden"></div>
+
+        <div class="form-actions">
+          <button type="submit" class="landing-btn secondary" id="btn-join-session">Join Session</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════ ADMIN SESSION DASHBOARD ═══════════ -->
+  <div id="admin-dashboard-screen" class="session-screen hidden">
+    <div class="dashboard-container">
+      <div class="dashboard-header">
+        <div class="dashboard-header-left">
+          <h2 id="dashboard-session-name">Session Name</h2>
+          <span id="dashboard-session-code" class="session-code-badge"></span>
+          <span id="dashboard-session-status" class="status-badge">Created</span>
+        </div>
+        <div class="dashboard-header-right">
+          <span id="dashboard-timer" class="dashboard-timer">--:--</span>
+          <button class="landing-btn primary" id="btn-start-session">▶ Start Session</button>
+          <button class="landing-btn outline" id="btn-end-session" style="display:none;">■ End Session</button>
+          <button class="back-btn" id="btn-back-from-dashboard">← Back</button>
+        </div>
+      </div>
+
+      <div class="dashboard-body">
+        <!-- Connection Info -->
+        <div class="dash-card" id="dash-connection-info">
+          <h3>Connection Info</h3>
+          <div class="info-row">
+            <span class="info-label">LAN Address:</span>
+            <span id="dash-lan-address" class="info-value mono">--</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Session Code:</span>
+            <span id="dash-session-code-display" class="info-value mono">--</span>
+          </div>
+        </div>
+
+        <!-- Participants -->
+        <div class="dash-card" id="dash-participants">
+          <h3>Participants (<span id="dash-participant-count">0</span>)</h3>
+          <div id="participant-list" class="participant-list"></div>
+        </div>
+
+        <!-- Broadcast -->
+        <div class="dash-card" id="dash-broadcast">
+          <h3>Broadcast Message</h3>
+          <div class="broadcast-row">
+            <input type="text" id="broadcast-input" placeholder="Type a message to all participants..." />
+            <button class="landing-btn primary" id="btn-send-broadcast" style="width:auto;padding:8px 16px;">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STUDENT SESSION VIEW (overlay on IDE) ═══════════ -->
+  <div id="student-session-bar" class="student-session-bar hidden">
+    <div class="session-bar-left">
+      <span id="session-bar-name" class="session-bar-name">Session</span>
+      <span id="session-bar-status" class="status-badge active">Active</span>
+    </div>
+    <div class="session-bar-center">
+      <span id="session-bar-timer" class="session-timer">60:00</span>
+    </div>
+    <div class="session-bar-right">
+      <button class="submit-btn" id="btn-submit-code">📤 Submit</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ QUESTION PANEL (sidebar for student) ═══════════ -->
+  <div id="question-panel" class="question-panel hidden">
+    <div class="question-panel-header">
+      <span>QUESTION</span>
+      <button id="btn-toggle-question" class="panel-toggle-btn">◀</button>
+    </div>
+    <div id="question-content" class="question-content">
+      <p class="question-placeholder">No question loaded.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ SESSION COMPLETE LOCK SCREEN ═══════════ -->
+  <div id="session-complete-screen" class="session-screen hidden">
+    <div class="session-complete-container">
+      <div class="complete-icon">✅</div>
+      <h2>Submission Complete</h2>
+      <p class="complete-subtitle">Your code has been submitted successfully.</p>
+
+      <div class="complete-details">
+        <div class="detail-row">
+          <span class="detail-label">Student ID:</span>
+          <span id="complete-student-id" class="detail-value">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Submitted At:</span>
+          <span id="complete-submit-time" class="detail-value">--</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Session:</span>
+          <span id="complete-session-name" class="detail-value">--</span>
+        </div>
+      </div>
+
+      <div class="complete-code-preview">
+        <div class="code-preview-header">Your Submitted Code</div>
+        <pre id="complete-code" class="code-preview"></pre>
+      </div>
+
+      <p class="complete-notice">You may now close this application or wait for the session administrator.</p>
+    </div>
+  </div>
+
   <!-- ═══════════ TOOLBAR ═══════════ -->
   <header id="toolbar">
     <div class="toolbar-left">
