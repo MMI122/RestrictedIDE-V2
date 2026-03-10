@@ -52,6 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Status
     setStatus('Ready');
 
+    // ── Session system ──
+    Session.init();
+
     // ── Security event listeners ──
     listen('security://focus-change', (event) => {
       const { has_focus, timestamp, consecutive_losses } = event.payload;

@@ -102,7 +102,7 @@ const Dashboard = (() => {
           </div>
           <div>
             <span class="status-badge ${dotClass}" style="font-size:10px;">${state}</span>
-            ${state !== 'Kicked' ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${p.id}')">Kick</button>` : ''}
+            ${state !== 'Kicked' ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${escapeHtml(p.student_id)}')">Kick</button>` : ''}
           </div>
         </div>
       `;
@@ -187,9 +187,9 @@ const Dashboard = (() => {
     try {
       await invoke('broadcast_message_cmd', {
         sessionId: Session.sessionData.id,
-        message,
-        target: 'All',
-        targetIds: [],
+        content: message,
+        targetType: 'all',
+        targetIds: null,
       });
 
       input.value = '';
@@ -206,7 +206,7 @@ const Dashboard = (() => {
     try {
       await invoke('kick_participant_cmd', {
         sessionId: Session.sessionData.id,
-        participantId,
+        studentId: participantId,
       });
       // Will be reflected on next poll
     } catch (err) {

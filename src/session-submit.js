@@ -42,12 +42,10 @@ const SubmitFlow = (() => {
     try {
       await invoke('submit_code_cmd', {
         sessionId: data.id,
-        participantId: data.participantId,
-        questionId: '1',  // Currently single-question mode
+        studentId: data.studentId,
         filename,
-        code,
-        language: data.language || guessLanguage(filename),
-        isFinal: true,
+        content: code,
+        lang: data.language || guessLanguage(filename),
       });
 
       // Stop timers

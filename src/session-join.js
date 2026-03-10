@@ -71,10 +71,8 @@ const JoinSession = (() => {
 
     try {
       const result = await invoke('join_session_cmd', {
-        serverAddr: server,
-        sessionCode: code,
+        code: code,
         studentId: studentId,
-        displayName: displayName,
       });
 
       showStatus('Joined successfully! Loading session...');
@@ -83,13 +81,15 @@ const JoinSession = (() => {
       Session.sessionData = {
         id: result.session_id,
         code: code,
-        name: result.session_name,
+        name: result.name,
         duration: result.duration_minutes,
+        remainingSeconds: result.remaining_seconds,
         questions: result.questions || [],
+        allowedUrls: result.allowed_urls || [],
         server: server,
         studentId: studentId,
         displayName: displayName,
-        participantId: result.participant_id,
+        language: null,
       };
       Session.role = 'student';
 
@@ -107,8 +107,9 @@ const JoinSession = (() => {
         const barName = $('#session-bar-name');
         if (barName) barName.textContent = Session.sessionData.name;
 
-        // Start countdown timer
-        CountdownTimer.start(Session.sessionData.duration * 60);
+        // Start countdown timer — use remaining_seconds if session already started
+        const secs = Session.sessionData.remainingSeconds || (Session.sessionData.duration * 60);
+        CountdownTimer.start(secs);
 
         // Start heartbeat
         startHeartbeat();
@@ -133,7 +134,7 @@ const JoinSession = (() => {
         if (Session.sessionData?.id) {
           await invoke('heartbeat_cmd', {
             sessionId: Session.sessionData.id,
-            participantId: Session.sessionData.participantId,
+            studentId: Session.sessionData.studentId,
           });
         }
       } catch (err) {

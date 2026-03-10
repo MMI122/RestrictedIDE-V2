@@ -117,22 +117,32 @@ const CreateSession = (() => {
     btn.disabled = true;
 
     try {
+      // Map questions to QuestionInput format expected by Rust
+      const questionInputs = questions.map(q => ({
+        title: q.title,
+        description: q.description,
+        input_data: q.sample_input || null,
+        expected_output: q.expected_output || null,
+        time_limit_ms: null,
+      }));
+
       const result = await invoke('create_session_cmd', {
-        request: {
-          name,
-          mode: mode === 'lan' ? 'Lan' : 'Online',
-          duration_minutes: duration,
-          allowed_language: language,
-          questions,
-          security,
-          port,
-        }
+        name,
+        durationMinutes: duration,
+        questions: questionInputs,
+        allowedUrls: [],
+        options: {
+          video: false,
+          audio: false,
+          screen_share: false,
+          recording: false,
+        },
       });
 
       // Store session data
       Session.sessionData = {
         id: result.session_id,
-        code: result.session_code,
+        code: result.code,
         name,
         duration,
         language,
@@ -140,13 +150,15 @@ const CreateSession = (() => {
         port,
         questions,
         security,
-        lan_address: result.lan_address,
+        lan_address: result.server_addr,
       };
       Session.role = 'admin';
 
       // Navigate to dashboard
       Dashboard.load(Session.sessionData);
       Session.showScreen('dashboard');
+
+      appendOutput('info', `✅ Session created: ${result.code} at ${result.server_addr}`);
 
     } catch (err) {
       console.error('Create session error:', err);
