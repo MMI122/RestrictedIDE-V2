@@ -97,12 +97,12 @@ const Dashboard = (() => {
         <div class="participant-row" data-id="${p.id}">
           <div class="participant-info">
             <span class="participant-status-dot ${dotClass}"></span>
-            <span class="participant-name">${escapeHtml(p.display_name)}</span>
+            <span class="participant-name">${escapeHtml(p.display_name || p.student_id)}</span>
             <span class="participant-id">${escapeHtml(p.student_id)}</span>
           </div>
           <div>
             <span class="status-badge ${dotClass}" style="font-size:10px;">${state}</span>
-            ${state !== 'Kicked' ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${escapeHtml(p.student_id)}')">Kick</button>` : ''}
+            ${state !== 'kicked' ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${escapeHtml(p.student_id)}')">Kick</button>` : ''}
           </div>
         </div>
       `;
@@ -111,11 +111,11 @@ const Dashboard = (() => {
 
   function getParticipantDotClass(state) {
     switch (state) {
-      case 'Active':       return 'online';
-      case 'Joined':       return 'online';
-      case 'Submitted':    return 'submitted';
-      case 'Disconnected': return 'disconnected';
-      case 'Kicked':       return 'kicked';
+      case 'active':       return 'online';
+      case 'joined':       return 'online';
+      case 'submitted':    return 'submitted';
+      case 'disconnected': return 'disconnected';
+      case 'kicked':       return 'kicked';
       default:             return 'online';
     }
   }
