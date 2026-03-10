@@ -1272,6 +1272,50 @@ button {
   margin-top: 40px;
 }
 
+/* ── Question navigation buttons ── */
+
+.question-nav {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.q-nav-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.q-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+.q-nav-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.question-section {
+  margin-top: 12px;
+}
+
+.question-section strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
 /* ═══════ SESSION COMPLETE LOCK SCREEN ═══════ */
 
 .session-complete-container {
