@@ -12,6 +12,7 @@ const Dashboard = (() => {
     $('#btn-start-session')?.addEventListener('click', handleStartSession);
     $('#btn-end-session')?.addEventListener('click', handleEndSession);
     $('#btn-send-broadcast')?.addEventListener('click', handleBroadcast);
+    $('#btn-review-submissions')?.addEventListener('click', handleReviewSubmissions);
 
     // Broadcast on Enter key
     $('#broadcast-input')?.addEventListener('keydown', (e) => {
@@ -36,11 +37,13 @@ const Dashboard = (() => {
     // Reset timer
     $('#dashboard-timer').textContent = `${data.duration}:00`;
 
-    // Show start button, hide end button
+    // Show start button, hide end button and review button
     const startBtn = $('#btn-start-session');
     const endBtn = $('#btn-end-session');
+    const reviewBtn = $('#btn-review-submissions');
     if (startBtn) startBtn.style.display = '';
     if (endBtn) endBtn.style.display = 'none';
+    if (reviewBtn) reviewBtn.style.display = 'none';
 
     // Start polling participants
     startPolling(data.id);
@@ -168,6 +171,10 @@ const Dashboard = (() => {
       const endBtn = $('#btn-end-session');
       if (endBtn) endBtn.style.display = 'none';
 
+      // Show review button
+      const reviewBtn = $('#btn-review-submissions');
+      if (reviewBtn) reviewBtn.style.display = '';
+
       // Stop timers
       if (Session.timerInterval) clearInterval(Session.timerInterval);
       stopPolling();
@@ -235,6 +242,14 @@ const Dashboard = (() => {
       $('#dashboard-timer').textContent =
         `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }, 1000);
+  }
+
+  function handleReviewSubmissions() {
+    const data = Session.sessionData;
+    if (!data) return;
+    stopPolling();
+    Session.showScreen('post');
+    PostSession.load(data.id, data.name, data.code);
   }
 
   function escapeHtml(str) {

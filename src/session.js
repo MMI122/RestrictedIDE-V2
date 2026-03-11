@@ -11,6 +11,7 @@ const Session = (() => {
     create:     () => $('#create-session-screen'),
     join:       () => $('#join-session-screen'),
     dashboard:  () => $('#admin-dashboard-screen'),
+    post:       () => $('#post-session-screen'),
     complete:   () => $('#session-complete-screen'),
   };
 
@@ -37,7 +38,7 @@ const Session = (() => {
     const studentBar = $('#student-session-bar');
     const questionPanel = $('#question-panel');
 
-    if (name === 'landing' || name === 'create' || name === 'join' || name === 'dashboard' || name === 'complete') {
+    if (name === 'landing' || name === 'create' || name === 'join' || name === 'dashboard' || name === 'post' || name === 'complete') {
       ideElements.forEach(sel => {
         const el = $(sel);
         if (el) el.style.display = 'none';
@@ -104,6 +105,7 @@ const Session = (() => {
     Dashboard.init();
     QuestionPanel.init();
     SubmitFlow.init();
+    PostSession.init();
   }
 
   return { init, showScreen, showIDE, enterStudentSession, get currentScreen() { return currentScreen; }, get sessionData() { return sessionData; }, set sessionData(v) { sessionData = v; }, get role() { return role; }, set role(v) { role = v; }, get timerInterval() { return timerInterval; }, set timerInterval(v) { timerInterval = v; }, get heartbeatInterval() { return heartbeatInterval; }, set heartbeatInterval(v) { heartbeatInterval = v; }, get pollInterval() { return pollInterval; }, set pollInterval(v) { pollInterval = v; }, get questionCount() { return questionCount; }, set questionCount(v) { questionCount = v; } };

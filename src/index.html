@@ -179,6 +179,7 @@
           <span id="dashboard-timer" class="dashboard-timer">--:--</span>
           <button class="landing-btn primary" id="btn-start-session">▶ Start Session</button>
           <button class="landing-btn outline" id="btn-end-session" style="display:none;">■ End Session</button>
+          <button class="landing-btn primary" id="btn-review-submissions" style="display:none;">📋 Review Submissions</button>
           <button class="back-btn" id="btn-back-from-dashboard">← Back</button>
         </div>
       </div>
@@ -209,6 +210,64 @@
           <div class="broadcast-row">
             <input type="text" id="broadcast-input" placeholder="Type a message to all participants..." />
             <button class="landing-btn primary" id="btn-send-broadcast" style="width:auto;padding:8px 16px;">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ POST-SESSION REVIEW (admin) ═══════════ -->
+  <div id="post-session-screen" class="session-screen hidden">
+    <div class="post-session-container">
+      <div class="post-header">
+        <div class="post-header-left">
+          <h2 id="post-session-name">Session Review</h2>
+          <span id="post-session-code" class="session-code-badge"></span>
+          <span class="status-badge ended">Ended</span>
+        </div>
+        <div class="post-header-right">
+          <button class="landing-btn primary" id="btn-run-all">▶ Run All</button>
+          <button class="landing-btn outline" id="btn-download-all">⬇ Download All</button>
+          <button class="landing-btn outline" id="btn-export-csv">📊 Export CSV</button>
+          <button class="landing-btn outline" id="btn-partial-grade" disabled title="Coming soon — ML-based partial grading">🧠 Partial Grade</button>
+          <button class="landing-btn danger" id="btn-delete-session">🗑 Delete Session</button>
+          <button class="back-btn" id="btn-back-from-post">← Back</button>
+        </div>
+      </div>
+
+      <div class="post-body">
+        <!-- Submission sidebar -->
+        <div class="post-sidebar">
+          <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
+          <div id="post-submission-list" class="post-submission-list"></div>
+        </div>
+
+        <!-- Code viewer + results -->
+        <div class="post-main">
+          <!-- Judge results table -->
+          <div id="post-results-panel" class="post-results-panel hidden">
+            <h3>Judge Results</h3>
+            <div id="post-results-table-wrap" class="post-results-table-wrap">
+              <table id="post-results-table">
+                <thead>
+                  <tr>
+                    <th>Student ID</th>
+                    <th>File</th>
+                    <th>Lang</th>
+                    <th>Result</th>
+                    <th>Time (ms)</th>
+                  </tr>
+                </thead>
+                <tbody id="post-results-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <!-- Code viewer -->
+          <div id="post-code-viewer" class="post-code-viewer">
+            <div class="code-viewer-header">
+              <span id="post-viewer-title">Select a submission to view</span>
+            </div>
+            <pre id="post-viewer-code" class="code-preview"></pre>
           </div>
         </div>
       </div>
@@ -424,5 +483,6 @@
   <script src="session-question.js"></script>
   <script src="session-timer.js"></script>
   <script src="session-submit.js"></script>
+  <script src="session-post.js"></script>
 </body>
 </html>
