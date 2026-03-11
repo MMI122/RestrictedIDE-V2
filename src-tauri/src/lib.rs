@@ -116,6 +116,11 @@ pub fn run() {
             commands::session_commands::kick_participant_cmd,
             commands::session_commands::stop_lan_server_cmd,
             commands::session_commands::get_current_role_cmd,
+            // Post-session
+            commands::post_session_commands::judge_submissions_cmd,
+            commands::post_session_commands::download_submissions_zip_cmd,
+            commands::post_session_commands::export_results_csv_cmd,
+            commands::post_session_commands::get_downloads_dir_cmd,
         ])
         .setup(move |app| {
             log::info!("Kiosk mode: {}", kiosk_enabled);

@@ -442,6 +442,23 @@ impl SessionDb {
         Ok(subs)
     }
 
+    pub fn update_submission_result(
+        &self,
+        submission_id: &str,
+        judge_result: &str,
+        judge_stdout: Option<&str>,
+        judge_stderr: Option<&str>,
+        exec_time_ms: Option<u32>,
+    ) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE submissions SET judge_result = ?1, judge_stdout = ?2,
+             judge_stderr = ?3, exec_time_ms = ?4 WHERE id = ?5",
+            params![judge_result, judge_stdout, judge_stderr, exec_time_ms, submission_id],
+        )?;
+        Ok(())
+    }
+
     // ─── Violations ─────────────────────────────────────────────────────
 
     pub fn add_violation(
