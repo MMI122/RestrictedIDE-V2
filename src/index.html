@@ -43,7 +43,34 @@
       </div>
 
       <div class="landing-footer">
+        <button class="landing-btn outline" id="btn-goto-session-list" style="width:auto;padding:8px 14px;">📚 View Session List</button>
         <span class="landing-version">v0.1.0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ADMIN SESSION LIST ═══════════ -->
+  <div id="session-list-screen" class="session-screen hidden">
+    <div class="session-list-container">
+      <div class="session-list-header">
+        <button class="back-btn" id="btn-back-from-session-list">← Back</button>
+        <h2>Session List</h2>
+        <button class="landing-btn outline" id="btn-refresh-session-list" style="width:auto;padding:8px 14px;">↻ Refresh</button>
+      </div>
+      <div class="session-list-table-wrap">
+        <table class="session-list-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Code</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Created At</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="session-list-body"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -87,6 +114,13 @@
           <button type="button" class="add-btn" id="btn-add-question">+ Add Question</button>
         </fieldset>
 
+        <!-- Allowed URLs -->
+        <fieldset class="form-section">
+          <legend>Allowed URLs (Documentation Links)</legend>
+          <div id="urls-list"></div>
+          <button type="button" class="add-btn" id="btn-add-url">+ Add URL</button>
+        </fieldset>
+
         <!-- Security Options -->
         <fieldset class="form-section">
           <legend>Security</legend>
@@ -101,6 +135,10 @@
           </div>
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-focus-watch" checked /> Focus Watchdog</label>
+          </div>
+          <div class="form-row">
+            <label for="session-disconnect-grace">Disconnect Grace (seconds)</label>
+            <input type="number" id="session-disconnect-grace" min="15" max="600" value="120" />
           </div>
         </fieldset>
 
@@ -198,10 +236,73 @@
           </div>
         </div>
 
+        <!-- Live Metrics -->
+        <div class="dash-card" id="dash-live-metrics">
+          <h3>Live Metrics</h3>
+          <div class="info-row">
+            <span class="info-label">Submissions:</span>
+            <span id="dash-submission-count" class="info-value mono">0</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Violations:</span>
+            <span id="dash-violation-count" class="info-value mono">0</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Latest Submission:</span>
+            <span id="dash-latest-submission" class="info-value">--</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Latest Violation:</span>
+            <span id="dash-latest-violation" class="info-value">--</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Last Refresh:</span>
+            <span id="dash-last-refresh" class="info-value mono">--</span>
+          </div>
+        </div>
+
         <!-- Participants -->
         <div class="dash-card" id="dash-participants">
           <h3>Participants (<span id="dash-participant-count">0</span>)</h3>
           <div id="participant-list" class="participant-list"></div>
+        </div>
+
+        <!-- Participant Detail -->
+        <div class="dash-card" id="dash-participant-detail">
+          <h3>Participant Detail</h3>
+          <div id="participant-detail-empty" class="participant-detail-empty">Select a participant to inspect live activity.</div>
+          <div id="participant-detail-content" class="participant-detail-content hidden">
+            <div class="info-row">
+              <span class="info-label">Name:</span>
+              <span id="detail-display-name" class="info-value">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Student ID:</span>
+              <span id="detail-student-id" class="info-value mono">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">State:</span>
+              <span id="detail-state" class="info-value">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Latest Submission:</span>
+              <span id="detail-latest-submission" class="info-value">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Latest Violation:</span>
+              <span id="detail-latest-violation" class="info-value">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Violations Count:</span>
+              <span id="detail-violation-count" class="info-value mono">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Violation Feed -->
+        <div class="dash-card" id="dash-violation-feed">
+          <h3>Violation Feed (<span id="dash-violation-feed-count">0</span>)</h3>
+          <div id="violation-feed-list" class="violation-feed-list"></div>
         </div>
 
         <!-- Broadcast -->
@@ -210,7 +311,13 @@
           <div class="broadcast-row">
             <input type="text" id="broadcast-input" placeholder="Type a message to all participants..." />
             <button class="landing-btn primary" id="btn-send-broadcast" style="width:auto;padding:8px 16px;">Send</button>
+            <button class="landing-btn outline" id="btn-send-selected" style="width:auto;padding:8px 16px;">Send to Selected</button>
           </div>
+          <div class="broadcast-history-header">
+            <span>History</span>
+            <span id="dash-broadcast-count" class="info-value mono">0</span>
+          </div>
+          <div id="broadcast-history-list" class="broadcast-history-list"></div>
         </div>
       </div>
     </div>
@@ -252,6 +359,7 @@
                 <thead>
                   <tr>
                     <th>Student ID</th>
+                    <th>Status</th>
                     <th>File</th>
                     <th>Lang</th>
                     <th>Result</th>
@@ -279,13 +387,19 @@
     <div class="session-bar-left">
       <span id="session-bar-name" class="session-bar-name">Session</span>
       <span id="session-bar-status" class="status-badge active">Active</span>
+      <span id="session-conn-indicator" class="session-conn-indicator connected">Connected</span>
     </div>
     <div class="session-bar-center">
       <span id="session-bar-timer" class="session-timer">60:00</span>
     </div>
     <div class="session-bar-right">
+      <button class="toolbar-btn reconnect-btn hidden" id="btn-session-retry" title="Retry connection">Reconnect</button>
       <button class="submit-btn" id="btn-submit-code">📤 Submit</button>
     </div>
+  </div>
+
+  <div id="session-conn-warning" class="session-conn-warning hidden">
+    Connection lost. Reconnecting... auto-submit in <span id="session-conn-countdown">--</span>s.
   </div>
 
   <!-- ═══════════ QUESTION PANEL (sidebar for student) ═══════════ -->
@@ -327,6 +441,15 @@
       </div>
 
       <p class="complete-notice">You may now close this application or wait for the session administrator.</p>
+    </div>
+  </div>
+
+  <div id="session-removed-screen" class="session-screen hidden">
+    <div class="session-complete-container">
+      <div class="complete-icon">⛔</div>
+      <h2>Removed From Session</h2>
+      <p class="complete-subtitle">You have been removed by the session administrator.</p>
+      <p class="complete-notice">Your editor has been locked. Contact your administrator if this was a mistake.</p>
     </div>
   </div>
 
@@ -483,6 +606,7 @@
   <script src="session-question.js"></script>
   <script src="session-timer.js"></script>
   <script src="session-submit.js"></script>
+  <script src="session-list.js"></script>
   <script src="session-post.js"></script>
 </body>
 </html>

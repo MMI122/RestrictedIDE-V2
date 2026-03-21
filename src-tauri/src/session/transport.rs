@@ -22,6 +22,12 @@ pub trait SessionTransport: Send + Sync {
     /// Permanently delete a session and all associated data.
     fn delete_session(&self, session_id: &str) -> Result<(), TransportError>;
 
+    /// Cleanup remote/storage assets associated with a session before deletion.
+    ///
+    /// LAN transport is expected to no-op. Online transport can remove
+    /// Supabase storage objects or other external artifacts.
+    fn cleanup_remote_assets(&self, session_id: &str) -> Result<(), TransportError>;
+
     /// Get full session status (admin dashboard).
     fn get_session_status(&self, session_id: &str) -> Result<SessionStatusResponse, TransportError>;
 
@@ -31,8 +37,10 @@ pub trait SessionTransport: Send + Sync {
     /// Student joins a session.
     fn join_session(
         &self,
+        server_addr: &str,
         code: &str,
         student_id: &str,
+        display_name: Option<&str>,
     ) -> Result<JoinSessionResponse, TransportError>;
 
     /// Student submits code.
@@ -61,10 +69,12 @@ pub trait SessionTransport: Send + Sync {
     fn get_participants(&self, session_id: &str) -> Result<Vec<Participant>, TransportError>;
 
     /// Get questions for a session.
+    #[allow(dead_code)] // used by upcoming online sync/reload flows
     fn get_questions(&self, session_id: &str) -> Result<Vec<SessionQuestion>, TransportError>;
 }
 
 /// Transport-level errors. Serializable so we can send them over IPC.
+#[allow(dead_code)] // some variants are for OnlineTransport and not all are used in LAN mode yet
 #[derive(Debug)]
 pub enum TransportError {
     NotFound(String),
@@ -165,6 +175,11 @@ impl SessionTransport for LanTransport {
         Ok(())
     }
 
+    fn cleanup_remote_assets(&self, _session_id: &str) -> Result<(), TransportError> {
+        // LAN mode has no external object storage to cleanup.
+        Ok(())
+    }
+
     fn get_session_status(&self, session_id: &str) -> Result<SessionStatusResponse, TransportError> {
         let session = self
             .db
@@ -187,8 +202,10 @@ impl SessionTransport for LanTransport {
 
     fn join_session(
         &self,
+        _server_addr: &str,
         code: &str,
         student_id: &str,
+        display_name: Option<&str>,
     ) -> Result<JoinSessionResponse, TransportError> {
         let session = self
             .db
@@ -203,7 +220,8 @@ impl SessionTransport for LanTransport {
         if self.db.get_participant(&session.id, student_id)?.is_some() {
             // Already joined — return session info (re-join)
         } else {
-            self.db.add_participant(&session.id, student_id)?;
+            self.db
+                .add_participant(&session.id, student_id, display_name)?;
         }
 
         let questions = self.db.get_questions(&session.id)?;
@@ -239,6 +257,14 @@ impl SessionTransport for LanTransport {
     }
 
     fn heartbeat(&self, req: HeartbeatRequest) -> Result<(), TransportError> {
+        if let Some(p) = self.db.get_participant(&req.session_id, &req.student_id)? {
+            if p.state == ParticipantState::Kicked {
+                return Err(TransportError::InvalidState(
+                    "You have been removed from this session".into(),
+                ));
+            }
+        }
+
         self.db
             .update_heartbeat(&req.session_id, &req.student_id)?;
         Ok(())

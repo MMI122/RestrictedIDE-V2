@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -6,7 +6,6 @@ use std::process::{Command, Stdio};
 use tauri::State;
 
 use crate::commands::session_commands::SessionState;
-use crate::session::models::*;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -22,16 +21,6 @@ pub struct JudgeResultEntry {
     pub exec_time_ms: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct CsvRow {
-    pub student_id: String,
-    pub filename: String,
-    pub lang: String,
-    pub judge_result: String,
-    pub exec_time_ms: String,
-    pub submitted_at: String,
-}
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 fn minimal_env() -> HashMap<String, String> {
@@ -44,6 +33,37 @@ fn minimal_env() -> HashMap<String, String> {
     env
 }
 
+fn safe_filename(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "submission.txt".to_string())
+}
+
+fn judge_result_to_str(result: &str) -> &str {
+    match result {
+        "pass" => "pass",
+        "partial" => "partial",
+        "fail" => "fail",
+        "compile_error" => "compile_error",
+        "timeout" => "timeout",
+        _ => "pending",
+    }
+}
+
+fn judge_result_enum_to_str(result: &crate::session::models::JudgeResult) -> &'static str {
+    match result {
+        crate::session::models::JudgeResult::Pass => "pass",
+        crate::session::models::JudgeResult::Partial => "partial",
+        crate::session::models::JudgeResult::Fail => "fail",
+        crate::session::models::JudgeResult::CompileError => "compile_error",
+        crate::session::models::JudgeResult::Timeout => "timeout",
+        crate::session::models::JudgeResult::Pending => "pending",
+    }
+}
+
 fn judge_one(
     filename: &str,
     content: &str,
@@ -52,8 +72,10 @@ fn judge_one(
     expected_output: Option<&str>,
     time_limit_ms: u32,
 ) -> (String, Option<String>, Option<String>, Option<u32>) {
+    let safe_name = safe_filename(filename);
+
     // Determine language from filename extension or lang field
-    let ext = Path::new(filename)
+    let ext = Path::new(&safe_name)
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
@@ -68,14 +90,17 @@ fn judge_one(
     }
 
     // Write source file
-    let src_path = tmp_dir.join(filename);
+    let src_path = tmp_dir.join(&safe_name);
+    if let Some(parent) = src_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     if std::fs::write(&src_path, content).is_err() {
         let _ = std::fs::remove_dir_all(&tmp_dir);
         return ("compile_error".into(), None, Some("Failed to write source".into()), None);
     }
 
     let env = minimal_env();
-    let base_name = Path::new(filename)
+    let base_name = Path::new(&safe_name)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
@@ -293,7 +318,32 @@ fn judge_one(
                     if actual == expected {
                         "pass"
                     } else {
-                        "fail"
+                        // Basic partial scoring: line-level overlap ratio.
+                        let actual_lines: Vec<&str> = actual
+                            .lines()
+                            .map(|l| l.trim())
+                            .filter(|l| !l.is_empty())
+                            .collect();
+                        let expected_lines: Vec<&str> = expected
+                            .lines()
+                            .map(|l| l.trim())
+                            .filter(|l| !l.is_empty())
+                            .collect();
+
+                        if !expected_lines.is_empty() {
+                            let matched = expected_lines
+                                .iter()
+                                .filter(|line| actual_lines.contains(line))
+                                .count();
+                            let ratio = matched as f32 / expected_lines.len() as f32;
+                            if ratio >= 0.4 {
+                                "partial"
+                            } else {
+                                "fail"
+                            }
+                        } else {
+                            "fail"
+                        }
                     }
                 }
                 None => "pass", // no expected output → just check it ran OK
@@ -378,7 +428,7 @@ pub async fn judge_submissions_cmd(
             // Update DB
             let _ = db.update_submission_result(
                 &sub.id,
-                &result,
+                judge_result_to_str(&result),
                 stdout.as_deref(),
                 stderr.as_deref(),
                 exec_ms,
@@ -434,6 +484,9 @@ pub async fn download_submissions_zip_cmd(
     let zip_filename = format!("{}.zip", folder_name);
     let zip_path = Path::new(&save_dir).join(&zip_filename);
 
+    std::fs::create_dir_all(&save_dir)
+        .map_err(|e| format!("Failed to create save directory: {}", e))?;
+
     // Build the zip in memory then write to disk
     let zip_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let mut buf = std::io::Cursor::new(Vec::new());
@@ -443,7 +496,12 @@ pub async fn download_submissions_zip_cmd(
                 .compression_method(zip::CompressionMethod::Deflated);
 
             for sub in &submissions {
-                let entry_path = format!("{}/{}/{}", folder_name, sub.student_id, sub.filename);
+                let entry_path = format!(
+                    "{}/{}/{}",
+                    folder_name,
+                    sub.student_id,
+                    safe_filename(&sub.filename)
+                );
                 zip.start_file(entry_path, options)
                     .map_err(|e| format!("Zip error: {}", e))?;
                 zip.write_all(sub.content.as_bytes())
@@ -483,7 +541,7 @@ pub async fn export_results_csv_cmd(
             escape_csv(&sub.student_id),
             escape_csv(&sub.filename),
             escape_csv(sub.lang.as_deref().unwrap_or("")),
-            escape_csv(&format!("{:?}", sub.judge_result).to_lowercase()),
+            escape_csv(judge_result_enum_to_str(&sub.judge_result)),
             sub.exec_time_ms
                 .map(|ms| ms.to_string())
                 .unwrap_or_default(),

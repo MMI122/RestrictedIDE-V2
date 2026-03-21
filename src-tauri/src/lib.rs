@@ -99,6 +99,7 @@ pub fn run() {
             commands::security_commands::check_vm,
             commands::security_commands::check_monitors,
             commands::security_commands::get_security_status,
+            commands::security_commands::set_kiosk_mode,
             // Session
             commands::session_commands::create_session_cmd,
             commands::session_commands::start_session_cmd,
@@ -112,8 +113,15 @@ pub fn run() {
             commands::session_commands::get_session_participants_cmd,
             commands::session_commands::get_session_submissions_cmd,
             commands::session_commands::get_session_violations_cmd,
+            commands::session_commands::get_session_broadcasts_cmd,
+            commands::session_commands::get_student_broadcasts_cmd,
+            commands::session_commands::get_broadcast_receipts_cmd,
+            commands::session_commands::mark_broadcast_delivered_cmd,
+            commands::session_commands::acknowledge_broadcast_cmd,
             commands::session_commands::broadcast_message_cmd,
             commands::session_commands::kick_participant_cmd,
+            commands::session_commands::permit_reentry_cmd,
+            commands::session_commands::report_violation_cmd,
             commands::session_commands::stop_lan_server_cmd,
             commands::session_commands::get_current_role_cmd,
             // Post-session

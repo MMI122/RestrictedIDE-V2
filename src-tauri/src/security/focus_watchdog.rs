@@ -100,6 +100,7 @@ pub fn start_focus_watchdog(app: AppHandle, poll_ms: u64) {
 }
 
 /// Stop the focus watchdog loop.
+#[allow(dead_code)] // lifecycle hook reserved for explicit kiosk teardown flow
 pub fn stop_focus_watchdog() {
     WATCHDOG_RUNNING.store(false, Ordering::SeqCst);
     log::info!("[Security] Focus watchdog stop requested");

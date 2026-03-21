@@ -8,11 +8,13 @@ const Session = (() => {
   // ── Screen references ──
   const screens = {
     landing:    () => $('#landing-screen'),
+    sessionList:() => $('#session-list-screen'),
     create:     () => $('#create-session-screen'),
     join:       () => $('#join-session-screen'),
     dashboard:  () => $('#admin-dashboard-screen'),
     post:       () => $('#post-session-screen'),
     complete:   () => $('#session-complete-screen'),
+    removed:    () => $('#session-removed-screen'),
   };
 
   // ── State ──
@@ -38,7 +40,7 @@ const Session = (() => {
     const studentBar = $('#student-session-bar');
     const questionPanel = $('#question-panel');
 
-    if (name === 'landing' || name === 'create' || name === 'join' || name === 'dashboard' || name === 'post' || name === 'complete') {
+    if (name === 'landing' || name === 'sessionList' || name === 'create' || name === 'join' || name === 'dashboard' || name === 'post' || name === 'complete' || name === 'removed') {
       ideElements.forEach(sel => {
         const el = $(sel);
         if (el) el.style.display = 'none';
@@ -86,6 +88,10 @@ const Session = (() => {
     // Landing screen buttons
     $('#btn-goto-create')?.addEventListener('click', () => showScreen('create'));
     $('#btn-goto-join')?.addEventListener('click', () => showScreen('join'));
+    $('#btn-goto-session-list')?.addEventListener('click', () => {
+      showScreen('sessionList');
+      SessionList.load();
+    });
     $('#btn-goto-practice')?.addEventListener('click', () => {
       showIDE();
       currentScreen = 'ide';
@@ -94,6 +100,7 @@ const Session = (() => {
     // Back buttons
     $('#btn-back-from-create')?.addEventListener('click', () => showScreen('landing'));
     $('#btn-back-from-join')?.addEventListener('click', () => showScreen('landing'));
+    $('#btn-back-from-session-list')?.addEventListener('click', () => showScreen('landing'));
     $('#btn-back-from-dashboard')?.addEventListener('click', handleBackFromDashboard);
 
     // Show landing on start
@@ -105,6 +112,7 @@ const Session = (() => {
     Dashboard.init();
     QuestionPanel.init();
     SubmitFlow.init();
+    SessionList.init();
     PostSession.init();
   }
 

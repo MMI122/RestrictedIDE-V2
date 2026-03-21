@@ -10,7 +10,6 @@ use crate::session::transport::{LanTransport, SessionTransport, TransportError};
 // ─── Shared session state (stored in Tauri managed state) ───────────────────
 
 pub struct SessionState {
-    pub transport: std::sync::Mutex<Option<Box<dyn SessionTransport>>>,
     pub lan_server: tokio::sync::Mutex<Option<LanServer>>,
     pub db: Arc<SessionDb>,
     pub current_session_id: std::sync::Mutex<Option<String>>,
@@ -33,9 +32,7 @@ impl Default for SessionRole {
 
 impl SessionState {
     pub fn new(db: Arc<SessionDb>) -> Self {
-        let transport = LanTransport::new(db.clone());
         Self {
-            transport: std::sync::Mutex::new(Some(Box::new(transport))),
             lan_server: tokio::sync::Mutex::new(None),
             db,
             current_session_id: std::sync::Mutex::new(None),
@@ -138,6 +135,12 @@ pub async fn delete_session_cmd(
     session_id: String,
 ) -> Result<(), String> {
     let transport = session_state.get_transport()?;
+
+    // First cleanup any remote assets (no-op for LAN transport).
+    transport
+        .cleanup_remote_assets(&session_id)
+        .map_err(transport_err)?;
+
     transport.delete_session(&session_id).map_err(transport_err)?;
     log::info!("[Session] Deleted {}", session_id);
     Ok(())
@@ -154,12 +157,19 @@ pub async fn list_sessions_cmd(
 #[tauri::command]
 pub async fn join_session_cmd(
     session_state: State<'_, SessionState>,
+    server_addr: String,
     code: String,
     student_id: String,
+    display_name: Option<String>,
 ) -> Result<JoinSessionResponse, String> {
     let transport = session_state.get_transport()?;
     let resp = transport
-        .join_session(&code, &student_id)
+        .join_session(
+            &server_addr,
+            &code,
+            &student_id,
+            display_name.as_deref(),
+        )
         .map_err(transport_err)?;
 
     *session_state.role.lock().unwrap() = SessionRole::Student;
@@ -258,6 +268,64 @@ pub async fn get_session_violations_cmd(
 }
 
 #[tauri::command]
+pub async fn get_session_broadcasts_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+) -> Result<Vec<Broadcast>, String> {
+    session_state
+        .db
+        .get_broadcasts(&session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_student_broadcasts_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+    student_id: String,
+) -> Result<Vec<Broadcast>, String> {
+    session_state
+        .db
+        .get_student_broadcasts(&session_id, &student_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_broadcast_receipts_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+) -> Result<Vec<BroadcastReceipt>, String> {
+    session_state
+        .db
+        .get_broadcast_receipts(&session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn mark_broadcast_delivered_cmd(
+    session_state: State<'_, SessionState>,
+    broadcast_id: String,
+    student_id: String,
+) -> Result<(), String> {
+    session_state
+        .db
+        .mark_broadcast_delivered(&broadcast_id, &student_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn acknowledge_broadcast_cmd(
+    session_state: State<'_, SessionState>,
+    broadcast_id: String,
+    student_id: String,
+) -> Result<(), String> {
+    session_state
+        .db
+        .acknowledge_broadcast(&broadcast_id, &student_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn broadcast_message_cmd(
     session_state: State<'_, SessionState>,
     session_id: String,
@@ -290,6 +358,40 @@ pub async fn kick_participant_cmd(
     transport
         .kick_participant(&session_id, &student_id)
         .map_err(transport_err)
+}
+
+#[tauri::command]
+pub async fn permit_reentry_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+    student_id: String,
+) -> Result<(), String> {
+    session_state
+        .db
+        .update_participant_state(&session_id, &student_id, "joined")
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn report_violation_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+    student_id: String,
+    event_type: String,
+    severity: String,
+    details: Option<String>,
+) -> Result<(), String> {
+    session_state
+        .db
+        .add_violation(
+            &session_id,
+            &student_id,
+            &event_type,
+            &severity,
+            details.as_deref(),
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

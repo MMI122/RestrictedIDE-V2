@@ -93,6 +93,7 @@ unsafe extern "system" fn monitor_enum_proc(
 
 /// Check if multi-monitor policy is violated.
 /// Returns true if there is more than one monitor.
+#[allow(dead_code)] // kept intentionally for anti-cheat checks and future policy wiring
 pub fn is_multi_monitor() -> bool {
     let info = detect_monitors();
     info.count > 1

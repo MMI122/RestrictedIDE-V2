@@ -40,17 +40,44 @@ const SubmitFlow = (() => {
     const filename = IDE.openTabs?.[IDE.activeTab]?.name || 'untitled.txt';
 
     try {
-      await invoke('submit_code_cmd', {
-        sessionId: data.id,
-        studentId: data.studentId,
-        filename,
-        content: code,
-        lang: data.language || guessLanguage(filename),
-      });
+      // Check if remote server
+      const isRemote = data.server && data.server.split(':')[0].toLowerCase() !== 'localhost' && data.server.split(':')[0].toLowerCase() !== '127.0.0.1';
+      
+      if (isRemote) {
+        // Submit via HTTP to remote LAN server
+        const submitUrl = `http://${data.server}/api/session/${data.id}/submit`;
+        const response = await fetch(submitUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id: data.studentId,
+            filename,
+            content: code,
+            lang: data.language || guessLanguage(filename),
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+      } else {
+        // Local IPC submit
+        await invoke('submit_code_cmd', {
+          sessionId: data.id,
+          studentId: data.studentId,
+          filename,
+          content: code,
+          lang: data.language || guessLanguage(filename),
+        });
+      }
 
       // Stop timers
       CountdownTimer.stop();
       if (Session.heartbeatInterval) clearInterval(Session.heartbeatInterval);
+      if (typeof JoinSession?.stopConnectionRecovery === 'function') {
+        JoinSession.stopConnectionRecovery();
+      }
 
       // Show lock screen
       showCompletionScreen(data, code, isAuto);

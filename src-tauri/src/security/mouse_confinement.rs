@@ -33,6 +33,7 @@ pub fn confine_cursor_to_foreground() {
 }
 
 /// Release cursor confinement (e.g., on admin exit).
+#[allow(dead_code)] // used by future post-session unlock sequence
 pub fn release_cursor() {
     unsafe {
         let _ = ClipCursor(None);

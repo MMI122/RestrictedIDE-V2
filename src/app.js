@@ -61,6 +61,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!has_focus) {
         setStatus(`⚠️ Focus lost (#${consecutive_losses})`);
         appendOutput('error', '⚠️ [Security] Window focus lost — violation #' + consecutive_losses);
+
+        if (Session?.role === 'student' && Session?.sessionData?.id && Session?.sessionData?.studentId) {
+          invoke('report_violation_cmd', {
+            sessionId: Session.sessionData.id,
+            studentId: Session.sessionData.studentId,
+            eventType: 'focus_loss',
+            severity: consecutive_losses >= 3 ? 'critical' : 'warning',
+            details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
+          }).catch((e) => {
+            console.warn('Failed to report focus violation:', e);
+          });
+        }
       } else {
         setStatus('Focus regained');
       }

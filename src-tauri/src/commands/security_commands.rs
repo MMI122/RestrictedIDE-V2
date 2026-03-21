@@ -64,3 +64,20 @@ pub struct SecurityStatus {
     pub focus_watchdog: bool,
     pub is_blocked: bool,
 }
+
+/// Enable or disable kiosk mode lockdown.
+/// Currently a confirmation that security controls are active.
+/// Future: can toggle individual security features on/off per-session.
+#[tauri::command]
+pub fn set_kiosk_mode(enabled: bool) -> serde_json::Value {
+    log::info!("[Security] Kiosk mode requested: enabled={}", enabled);
+    
+    // For now, security controls (keyboard hooks, focus watchdog, process monitor)
+    // are always active at app startup. This command confirms the request.
+    // In future phases, we can make security toggleable per-session.
+    
+    serde_json::json!({
+        "success": true,
+        "message": if enabled { "Kiosk mode active" } else { "Kiosk mode disabled (exam mode may be unsafe)" }
+    })
+}

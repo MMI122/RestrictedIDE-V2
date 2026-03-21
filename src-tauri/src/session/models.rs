@@ -41,6 +41,12 @@ pub struct SessionOptions {
     pub audio: bool,
     pub screen_share: bool,
     pub recording: bool,
+    #[serde(default = "default_disconnect_grace_seconds")]
+    pub disconnect_grace_seconds: u32,
+}
+
+fn default_disconnect_grace_seconds() -> u32 {
+    120
 }
 
 impl Default for SessionOptions {
@@ -50,6 +56,7 @@ impl Default for SessionOptions {
             audio: false,
             screen_share: false,
             recording: false,
+            disconnect_grace_seconds: default_disconnect_grace_seconds(),
         }
     }
 }
@@ -148,6 +155,15 @@ pub struct Broadcast {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BroadcastReceipt {
+    pub id: String,
+    pub broadcast_id: String,
+    pub student_id: String,
+    pub delivered_at: Option<DateTime<Utc>>,
+    pub acknowledged_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BroadcastTarget {
     All,
@@ -172,13 +188,6 @@ pub struct QuestionInput {
     pub input_data: Option<String>,
     pub expected_output: Option<String>,
     pub time_limit_ms: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JoinSessionRequest {
-    pub server_addr: String,
-    pub code: String,
-    pub student_id: String,
 }
 
 #[derive(Debug, Serialize)]

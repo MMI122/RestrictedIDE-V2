@@ -41,8 +41,11 @@ impl LanServer {
             .route("/api/session/{id}/participants", get(handle_participants))
             .route("/api/session/{id}/submissions", get(handle_submissions))
             .route("/api/session/{id}/violations", get(handle_violations))
+            .route("/api/session/{id}/broadcasts/{student_id}", get(handle_student_broadcasts))
             .route("/api/session/{id}/questions", get(handle_questions))
             .route("/api/session/{id}/broadcast", post(handle_broadcast))
+            .route("/api/broadcast/{broadcast_id}/delivered", post(handle_broadcast_delivered))
+            .route("/api/broadcast/{broadcast_id}/ack", post(handle_broadcast_ack))
             .route("/api/session/{id}/kick", post(handle_kick))
             .route("/api/health", get(handle_health))
             .layer(CorsLayer::permissive())
@@ -145,6 +148,7 @@ async fn handle_health() -> impl IntoResponse {
 #[derive(Deserialize)]
 struct JoinBody {
     student_id: String,
+    display_name: Option<String>,
 }
 
 async fn handle_join(
@@ -172,7 +176,7 @@ async fn handle_join(
             let _ = db.update_heartbeat(&session.id, &body.student_id);
         }
         Ok(None) => {
-            if let Err(e) = db.add_participant(&session.id, &body.student_id) {
+            if let Err(e) = db.add_participant(&session.id, &body.student_id, body.display_name.as_deref()) {
                 return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
             }
         }
@@ -271,6 +275,13 @@ async fn handle_heartbeat(
     Path(id): Path<String>,
     Json(body): Json<HeartbeatBody>,
 ) -> impl IntoResponse {
+    if let Ok(Some(p)) = db.get_participant(&id, &body.student_id) {
+        if p.state == ParticipantState::Kicked {
+            return err_json(StatusCode::FORBIDDEN, "You have been removed from this session")
+                .into_response();
+        }
+    }
+
     match db.update_heartbeat(&id, &body.student_id) {
         Ok(_) => ok_json(serde_json::json!({ "ok": true })).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
@@ -315,6 +326,17 @@ async fn handle_violations(
     }
 }
 
+// GET /api/session/:id/broadcasts/:student_id
+async fn handle_student_broadcasts(
+    State(db): State<ServerState>,
+    Path((id, student_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    match db.get_student_broadcasts(&id, &student_id) {
+        Ok(rows) => ok_json(rows).into_response(),
+        Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    }
+}
+
 // GET /api/session/:id/questions
 async fn handle_questions(
     State(db): State<ServerState>,
@@ -335,6 +357,11 @@ struct BroadcastBody {
     target_ids: Option<Vec<String>>,
 }
 
+#[derive(Deserialize)]
+struct BroadcastReceiptBody {
+    student_id: String,
+}
+
 async fn handle_broadcast(
     State(db): State<ServerState>,
     Path(id): Path<String>,
@@ -343,6 +370,28 @@ async fn handle_broadcast(
     let target = body.target_type.as_deref().unwrap_or("all");
     match db.add_broadcast(&id, &body.sender_id, &body.content, target, body.target_ids.as_deref()) {
         Ok(b) => ok_json(b).into_response(),
+        Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    }
+}
+
+async fn handle_broadcast_delivered(
+    State(db): State<ServerState>,
+    Path(broadcast_id): Path<String>,
+    Json(body): Json<BroadcastReceiptBody>,
+) -> impl IntoResponse {
+    match db.mark_broadcast_delivered(&broadcast_id, &body.student_id) {
+        Ok(_) => ok_json(serde_json::json!({ "delivered": true })).into_response(),
+        Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    }
+}
+
+async fn handle_broadcast_ack(
+    State(db): State<ServerState>,
+    Path(broadcast_id): Path<String>,
+    Json(body): Json<BroadcastReceiptBody>,
+) -> impl IntoResponse {
+    match db.acknowledge_broadcast(&broadcast_id, &body.student_id) {
+        Ok(_) => ok_json(serde_json::json!({ "acknowledged": true })).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
 }

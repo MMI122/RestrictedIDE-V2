@@ -102,6 +102,15 @@ impl SessionDb {
                 target_ids      TEXT,
                 created_at      TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS broadcast_receipts (
+                id              TEXT PRIMARY KEY,
+                broadcast_id    TEXT NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
+                student_id      TEXT NOT NULL,
+                delivered_at    TEXT,
+                acknowledged_at TEXT,
+                UNIQUE(broadcast_id, student_id)
+            );
             ",
         )?;
         Ok(())
@@ -289,20 +298,21 @@ impl SessionDb {
         &self,
         session_id: &str,
         student_id: &str,
+        display_name: Option<&str>,
     ) -> SqlResult<Participant> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO participants (id, session_id, student_id, state, joined_at, last_seen_at)
-             VALUES (?1, ?2, ?3, 'joined', ?4, ?4)",
-            params![id, session_id, student_id, now.to_rfc3339()],
+            "INSERT INTO participants (id, session_id, student_id, display_name, state, joined_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, 'joined', ?5, ?5)",
+            params![id, session_id, student_id, display_name, now.to_rfc3339()],
         )?;
         Ok(Participant {
             id,
             session_id: session_id.to_string(),
             student_id: student_id.to_string(),
-            display_name: None,
+            display_name: display_name.map(String::from),
             state: ParticipantState::Joined,
             last_seen_at: Some(now),
             joined_at: now,
@@ -531,6 +541,28 @@ impl SessionDb {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, session_id, sender_id, content, target_type, targets_json, now.to_rfc3339()],
         )?;
+
+        let recipients: Vec<String> = if target_type == "specific" {
+            target_ids.map(|ids| ids.to_vec()).unwrap_or_default()
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT student_id FROM participants WHERE session_id = ?1 AND state != 'kicked'",
+            )?;
+            let rows = stmt.query_map(params![session_id], |row| row.get::<_, String>(0))?;
+            rows
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
+        for student_id in recipients.iter() {
+            let rid = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT OR IGNORE INTO broadcast_receipts (id, broadcast_id, student_id)
+                 VALUES (?1, ?2, ?3)",
+                params![rid, id, student_id],
+            )?;
+        }
+
         Ok(Broadcast {
             id,
             session_id: session_id.to_string(),
@@ -544,6 +576,122 @@ impl SessionDb {
             target_ids: target_ids.map(|ids| ids.to_vec()),
             created_at: now,
         })
+    }
+
+    pub fn get_broadcasts(&self, session_id: &str) -> SqlResult<Vec<Broadcast>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, sender_id, content, target_type, target_ids, created_at
+             FROM broadcasts WHERE session_id = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                let target_type: String = row.get(4)?;
+                let target_ids_str: Option<String> = row.get(5)?;
+                let target_ids = target_ids_str
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok());
+                Ok(Broadcast {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    sender_id: row.get(2)?,
+                    content: row.get(3)?,
+                    target_type: if target_type == "specific" {
+                        BroadcastTarget::Specific
+                    } else {
+                        BroadcastTarget::All
+                    },
+                    target_ids,
+                    created_at: parse_dt_or_now(row.get::<_, Option<String>>(6)?),
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn get_student_broadcasts(
+        &self,
+        session_id: &str,
+        student_id: &str,
+    ) -> SqlResult<Vec<Broadcast>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT b.id, b.session_id, b.sender_id, b.content, b.target_type, b.target_ids, b.created_at
+             FROM broadcasts b
+             INNER JOIN broadcast_receipts r ON r.broadcast_id = b.id
+             WHERE b.session_id = ?1 AND r.student_id = ?2
+             ORDER BY b.created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id, student_id], |row| {
+                let target_type: String = row.get(4)?;
+                let target_ids_str: Option<String> = row.get(5)?;
+                let target_ids = target_ids_str
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok());
+                Ok(Broadcast {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    sender_id: row.get(2)?,
+                    content: row.get(3)?,
+                    target_type: if target_type == "specific" {
+                        BroadcastTarget::Specific
+                    } else {
+                        BroadcastTarget::All
+                    },
+                    target_ids,
+                    created_at: parse_dt_or_now(row.get::<_, Option<String>>(6)?),
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn get_broadcast_receipts(&self, session_id: &str) -> SqlResult<Vec<BroadcastReceipt>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT r.id, r.broadcast_id, r.student_id, r.delivered_at, r.acknowledged_at
+             FROM broadcast_receipts r
+             INNER JOIN broadcasts b ON b.id = r.broadcast_id
+             WHERE b.session_id = ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                Ok(BroadcastReceipt {
+                    id: row.get(0)?,
+                    broadcast_id: row.get(1)?,
+                    student_id: row.get(2)?,
+                    delivered_at: row.get::<_, Option<String>>(3)?.and_then(|s| s.parse().ok()),
+                    acknowledged_at: row.get::<_, Option<String>>(4)?.and_then(|s| s.parse().ok()),
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn mark_broadcast_delivered(&self, broadcast_id: &str, student_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE broadcast_receipts
+             SET delivered_at = COALESCE(delivered_at, ?1)
+             WHERE broadcast_id = ?2 AND student_id = ?3",
+            params![now, broadcast_id, student_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn acknowledge_broadcast(&self, broadcast_id: &str, student_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE broadcast_receipts
+             SET delivered_at = COALESCE(delivered_at, ?1), acknowledged_at = ?1
+             WHERE broadcast_id = ?2 AND student_id = ?3",
+            params![now, broadcast_id, student_id],
+        )?;
+        Ok(())
     }
 
     // ─── Stats helpers ──────────────────────────────────────────────────

@@ -9,11 +9,51 @@ const CreateSession = (() => {
     // Add question button
     $('#btn-add-question')?.addEventListener('click', addQuestionCard);
 
+    // Add URL button
+    $('#btn-add-url')?.addEventListener('click', addUrlCard);
+
     // Form submission
     $('#create-session-form')?.addEventListener('submit', handleCreateSession);
 
     // Add first question by default
     addQuestionCard();
+  }
+
+  function addUrlCard() {
+    const list = $('#urls-list');
+    if (!list) return;
+
+    Session.urlCount = (Session.urlCount || 0) + 1;
+    const idx = Session.urlCount;
+
+    const card = document.createElement('div');
+    card.className = 'url-card';
+    card.dataset.urlIdx = idx;
+    card.innerHTML = `
+      <div class="url-input-row">
+        <input type="url" id="url-${idx}" placeholder="e.g. https://docs.python.org" />
+        <button type="button" class="remove-url-btn" data-idx="${idx}">✕ Remove</button>
+      </div>
+    `;
+
+    card.querySelector('.remove-url-btn').addEventListener('click', () => {
+      card.remove();
+    });
+
+    list.appendChild(card);
+  }
+
+  function collectUrls() {
+    const cards = document.querySelectorAll('.url-card');
+    const urls = [];
+    cards.forEach(card => {
+      const idx = card.dataset.urlIdx;
+      const url = card.querySelector(`#url-${idx}`)?.value?.trim();
+      if (url) {
+        urls.push(url);
+      }
+    });
+    return urls;
   }
 
   function addQuestionCard() {
@@ -94,6 +134,7 @@ const CreateSession = (() => {
     const language = $('#session-language')?.value;
     const mode = $('#session-mode')?.value;
     const port = parseInt($('#session-port')?.value, 10) || 9876;
+    const disconnectGraceSeconds = parseInt($('#session-disconnect-grace')?.value, 10) || 120;
 
     if (!name) return;
 
@@ -126,16 +167,20 @@ const CreateSession = (() => {
         time_limit_ms: null,
       }));
 
+      // Collect allowed URLs
+      const allowedUrls = collectUrls();
+
       const result = await invoke('create_session_cmd', {
         name,
         durationMinutes: duration,
         questions: questionInputs,
-        allowedUrls: [],
+        allowedUrls,
         options: {
           video: false,
           audio: false,
           screen_share: false,
           recording: false,
+          disconnect_grace_seconds: Math.max(15, Math.min(600, disconnectGraceSeconds)),
         },
       });
 

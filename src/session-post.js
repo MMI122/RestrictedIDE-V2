@@ -6,6 +6,7 @@
 
 const PostSession = (() => {
   let submissions = [];
+  let participantStateByStudent = new Map();
   let selectedIndex = -1;
 
   function init() {
@@ -13,7 +14,10 @@ const PostSession = (() => {
     $('#btn-download-all')?.addEventListener('click', handleDownloadAll);
     $('#btn-export-csv')?.addEventListener('click', handleExportCsv);
     $('#btn-delete-session')?.addEventListener('click', handleDeleteSession);
-    $('#btn-back-from-post')?.addEventListener('click', () => Session.showScreen('landing'));
+    $('#btn-back-from-post')?.addEventListener('click', () => {
+      Session.showScreen('sessionList');
+      SessionList.load();
+    });
   }
 
   async function load(sessionId, sessionName, sessionCode) {
@@ -32,9 +36,15 @@ const PostSession = (() => {
       submissions = await invoke('get_session_submissions_cmd', { sessionId });
       // Filter to final submissions only
       submissions = submissions.filter(s => s.is_final);
+
+      const participants = await invoke('get_session_participants_cmd', { sessionId });
+      participantStateByStudent = new Map(
+        (participants || []).map((p) => [p.student_id, (p.state || 'joined').toLowerCase()]),
+      );
     } catch (err) {
       console.error('Failed to load submissions:', err);
       submissions = [];
+      participantStateByStudent = new Map();
     }
 
     $('#post-submission-count').textContent = submissions.length;
@@ -51,13 +61,14 @@ const PostSession = (() => {
     }
 
     list.innerHTML = submissions.map((s, i) => {
-      const result = s.judge_result || 'pending';
+      const result = (s.judge_result || 'pending').toLowerCase();
+      const state = getDisplayStatus(s);
       const active = i === selectedIndex ? ' active' : '';
       return `
         <div class="post-sub-item${active}" data-index="${i}" onclick="PostSession.selectSubmission(${i})">
           <div>
             <div class="sub-student">${escapeHtml(s.student_id)}</div>
-            <div class="sub-file">${escapeHtml(s.filename)}</div>
+            <div class="sub-file">${escapeHtml(s.filename)} • ${escapeHtml(state)}</div>
           </div>
           <span class="sub-badge ${escapeHtml(result)}">${escapeHtml(result)}</span>
         </div>`;
@@ -133,9 +144,11 @@ const PostSession = (() => {
 
     panel.classList.remove('hidden');
     body.innerHTML = results.map(r => {
+      const state = getDisplayStatus(r);
       const badge = `<span class="sub-badge ${escapeHtml(r.result)}">${escapeHtml(r.result)}</span>`;
       return `<tr>
         <td>${escapeHtml(r.student_id)}</td>
+        <td>${escapeHtml(state)}</td>
         <td>${escapeHtml(r.filename)}</td>
         <td>${escapeHtml(r.lang || '')}</td>
         <td>${badge}</td>
@@ -150,8 +163,10 @@ const PostSession = (() => {
     const data = Session.sessionData;
     if (!data) return;
 
-    // Use user's Downloads folder as default
-    const saveDir = await getDownloadsDir();
+    // Ask teacher where to save zip; prefill with Downloads
+    const defaultDir = await getDownloadsDir();
+    const saveDir = window.prompt('Enter folder path to save submissions ZIP:', defaultDir);
+    if (!saveDir || !saveDir.trim()) return;
 
     const btn = $('#btn-download-all');
     if (btn) {
@@ -162,7 +177,7 @@ const PostSession = (() => {
     try {
       const zipPath = await invoke('download_submissions_zip_cmd', {
         sessionId: data.id,
-        saveDir,
+        saveDir: saveDir.trim(),
       });
       alert('Saved to: ' + zipPath);
     } catch (err) {
@@ -210,8 +225,8 @@ const PostSession = (() => {
       return;
     }
 
-    // Second confirmation
-    if (!confirm('Are you ABSOLUTELY sure? Type OK to confirm.')) {
+    const typed = window.prompt('Type DELETE to permanently remove this session:');
+    if (typed !== 'DELETE') {
       return;
     }
 
@@ -222,7 +237,8 @@ const PostSession = (() => {
       hideRunningOverlay();
       alert('Session deleted.');
       Session.sessionData = null;
-      Session.showScreen('landing');
+      Session.showScreen('sessionList');
+      await SessionList.load();
     } catch (err) {
       hideRunningOverlay();
       console.error('Delete error:', err);
@@ -243,6 +259,14 @@ const PostSession = (() => {
     const div = document.createElement('div');
     div.textContent = String(str);
     return div.innerHTML;
+  }
+
+  function getDisplayStatus(item) {
+    const result = (item.judge_result || item.result || 'pending').toLowerCase();
+    if (result === 'timeout') return 'timed-out';
+    if (result === 'compile_error') return 'compile-error';
+    if (result !== 'pending') return 'judged';
+    return participantStateByStudent.get(item.student_id) || 'submitted';
   }
 
   async function getDownloadsDir() {

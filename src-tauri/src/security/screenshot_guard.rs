@@ -12,6 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// appears black in screen captures and remote desktop.
 const WDA_MONITOR: WINDOW_DISPLAY_AFFINITY = WINDOW_DISPLAY_AFFINITY(0x00000001);
 /// WDA_NONE = 0x00000000 — no restrictions.
+#[allow(dead_code)] // kept for future disable/teardown path
 const WDA_NONE: WINDOW_DISPLAY_AFFINITY = WINDOW_DISPLAY_AFFINITY(0x00000000);
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -59,6 +60,7 @@ pub fn enable_screenshot_prevention(hwnd: Option<HWND>) -> ScreenshotGuardResult
 }
 
 /// Remove screenshot prevention (e.g., for admin mode).
+#[allow(dead_code)] // kept for future disable/teardown path
 pub fn disable_screenshot_prevention(hwnd: Option<HWND>) -> ScreenshotGuardResult {
     let target = hwnd.unwrap_or_else(|| unsafe { GetForegroundWindow() });
 
