@@ -13,6 +13,8 @@ const JoinSession = (() => {
   const DEFAULT_DISCONNECT_GRACE_SECONDS = 120;
   let disconnectAutoSubmitTriggered = false;
   const seenBroadcastIds = new Set();
+  let waitForStartInterval = null;
+  let studentSessionStarted = false;
 
   function getDisconnectGraceSeconds() {
     const v = Number(Session.sessionData?.disconnectGraceSeconds);
@@ -25,6 +27,141 @@ const JoinSession = (() => {
     return msg.includes('removed') || msg.includes('kicked') || msg.includes('forbidden');
   }
 
+  function normalizeSessionStatus(status) {
+    return String(status || 'created').toLowerCase();
+  }
+
+  function stopWaitForStart() {
+    if (waitForStartInterval) {
+      clearInterval(waitForStartInterval);
+      waitForStartInterval = null;
+    }
+  }
+
+  async function fetchSessionStatus() {
+    if (!Session.sessionData?.id) {
+      throw new Error('No session selected');
+    }
+
+    const isRemote = isRemoteServer(Session.sessionData.server);
+    if (isRemote) {
+      const statusUrl = `http://${Session.sessionData.server}/api/session/${Session.sessionData.id}/status`;
+      const res = await fetch(statusUrl, { method: 'GET' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${res.status}`);
+      }
+      return payload.data || payload;
+    }
+
+    return invoke('get_session_status_cmd', {
+      sessionId: Session.sessionData.id,
+    });
+  }
+
+  function computeRemainingSecondsFromStatus(statusResp) {
+    const endsAt = statusResp?.session?.ends_at;
+    if (!endsAt) return null;
+
+    const end = new Date(endsAt).getTime();
+    if (!Number.isFinite(end)) return null;
+
+    const now = Date.now();
+    return Math.max(0, Math.floor((end - now) / 1000));
+  }
+
+  function resetEditorUiToEmpty() {
+    IDE.openTabs = [];
+    IDE.activeTab = null;
+    if (typeof Editor?.renderTabs === 'function') {
+      Editor.renderTabs();
+    }
+
+    const editorContainer = $('#editor-container');
+    const welcome = $('#welcome');
+    const codeEditor = $('#code-editor');
+    const syntax = $('#syntax-highlight');
+    const lines = $('#line-numbers');
+
+    if (editorContainer) editorContainer.style.display = 'none';
+    if (welcome) welcome.classList.remove('hidden');
+    if (codeEditor) codeEditor.value = '';
+    if (syntax) syntax.textContent = '';
+    if (lines) lines.textContent = '1\n';
+    setLanguageStatus('');
+  }
+
+  async function clearStudentSandbox() {
+    if (!IDE?.sandboxPath) return;
+
+    const rootEntries = await invoke('list_dir', { dirPath: IDE.sandboxPath });
+    for (const entry of rootEntries) {
+      await invoke('delete_file', { filePath: entry.path });
+    }
+
+    resetEditorUiToEmpty();
+    await FileTree.load(IDE.sandboxPath);
+  }
+
+  function beginStudentSession(statusResp) {
+    if (studentSessionStarted) return;
+    studentSessionStarted = true;
+    stopWaitForStart();
+
+    hideStatus();
+    Session.enterStudentSession();
+
+    if (Session.sessionData.questions.length > 0) {
+      QuestionPanel.loadQuestions(Session.sessionData.questions, Session.sessionData.allowedUrls || []);
+    }
+
+    const barName = $('#session-bar-name');
+    if (barName) barName.textContent = Session.sessionData.name;
+
+    const barStatus = $('#session-bar-status');
+    if (barStatus) {
+      barStatus.textContent = 'Active';
+      barStatus.className = 'status-badge active';
+    }
+
+    const fromStatus = computeRemainingSecondsFromStatus(statusResp);
+    const secs = Number.isFinite(fromStatus)
+      ? fromStatus
+      : (Session.sessionData.remainingSeconds || (Session.sessionData.duration * 60));
+    CountdownTimer.start(secs);
+  }
+
+  function startWaitingForSessionStart() {
+    showStatus('Joined successfully. Waiting for administrator to start the session...');
+
+    const barStatus = $('#session-bar-status');
+    if (barStatus) {
+      barStatus.textContent = 'Waiting';
+      barStatus.className = 'status-badge created';
+    }
+
+    stopWaitForStart();
+    waitForStartInterval = setInterval(async () => {
+      if (studentSessionStarted) {
+        stopWaitForStart();
+        return;
+      }
+
+      try {
+        const statusResp = await fetchSessionStatus();
+        const status = normalizeSessionStatus(statusResp?.session?.status);
+        if (status === 'active') {
+          beginStudentSession(statusResp);
+        } else if (status === 'ended') {
+          stopWaitForStart();
+          showError('This session has already ended.');
+        }
+      } catch (err) {
+        console.warn('Waiting-for-start polling failed:', err);
+      }
+    }, 3000);
+  }
+
   function enterRemovedState() {
     if (Session.heartbeatInterval) {
       clearInterval(Session.heartbeatInterval);
@@ -32,6 +169,8 @@ const JoinSession = (() => {
     }
     stopReconnectLoop();
     stopDisconnectCountdown();
+    stopWaitForStart();
+    studentSessionStarted = false;
     reconnectInFlight = false;
     setConnectionState('disconnected', 'Removed');
     Session.showScreen('removed');
@@ -417,27 +556,16 @@ const JoinSession = (() => {
         language: null,
       };
       Session.role = 'student';
+      studentSessionStarted = false;
+      stopWaitForStart();
+
+      showStatus('Preparing clean workspace...');
+      await clearStudentSandbox();
 
       // Small delay for UX
       setTimeout(() => {
         // Activate kiosk lockdown on join
         activateKioskMode();
-
-        // Enter student session mode (shows IDE + session bar + question panel)
-        Session.enterStudentSession();
-
-        // Load question content
-        if (Session.sessionData.questions.length > 0) {
-          QuestionPanel.loadQuestions(Session.sessionData.questions);
-        }
-
-        // Set session bar info
-        const barName = $('#session-bar-name');
-        if (barName) barName.textContent = Session.sessionData.name;
-
-        // Start countdown timer — use remaining_seconds if session already started
-        const secs = Session.sessionData.remainingSeconds || (Session.sessionData.duration * 60);
-        CountdownTimer.start(secs);
 
         // Start heartbeat
         disconnectAutoSubmitTriggered = false;
@@ -445,6 +573,22 @@ const JoinSession = (() => {
         setConnectionState('connected', 'Connected');
         startHeartbeat();
         pollBroadcasts().catch((e) => console.warn('Initial broadcast poll failed:', e));
+
+        fetchSessionStatus()
+          .then((statusResp) => {
+            const status = normalizeSessionStatus(statusResp?.session?.status);
+            if (status === 'active') {
+              beginStudentSession(statusResp);
+            } else if (status === 'ended') {
+              showError('This session has already ended.');
+            } else {
+              startWaitingForSessionStart();
+            }
+          })
+          .catch((err) => {
+            console.warn('Initial session status fetch failed:', err);
+            startWaitingForSessionStart();
+          });
 
       }, 500);
 
@@ -497,6 +641,7 @@ const JoinSession = (() => {
   function stopConnectionRecovery() {
     stopReconnectLoop();
     stopDisconnectCountdown();
+    stopWaitForStart();
     reconnectInFlight = false;
     heartbeatFailures = 0;
     disconnectGraceRemaining = getDisconnectGraceSeconds();

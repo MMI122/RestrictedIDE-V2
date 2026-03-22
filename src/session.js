@@ -79,7 +79,18 @@ const Session = (() => {
     const studentBar = $('#student-session-bar');
     if (studentBar) studentBar.classList.remove('hidden');
     const questionPanel = $('#question-panel');
-    if (questionPanel) questionPanel.classList.remove('hidden');
+    if (questionPanel) {
+      questionPanel.classList.remove('hidden');
+      questionPanel.classList.remove('collapsed');
+    }
+    const questionOpenBtn = $('#btn-open-question-panel');
+    if (questionOpenBtn) questionOpenBtn.classList.add('hidden');
+
+    const barStatus = $('#session-bar-status');
+    if (barStatus) {
+      barStatus.textContent = 'Active';
+      barStatus.className = 'status-badge active';
+    }
   }
 
   // ── Initialization ──

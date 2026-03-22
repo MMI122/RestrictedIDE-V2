@@ -6,32 +6,53 @@
 
 const QuestionPanel = (() => {
   let questions = [];
+  let allowedUrls = [];
   let currentIdx = 0;
-  let panelVisible = true;
+  let panelCollapsed = false;
 
   function init() {
     // Toggle panel
     $('#btn-toggle-question')?.addEventListener('click', togglePanel);
+    $('#btn-open-question-panel')?.addEventListener('click', expandPanel);
   }
 
   function togglePanel() {
-    const panel = $('#question-panel');
-    const btn = $('#btn-toggle-question');
-    if (!panel) return;
-
-    panelVisible = !panelVisible;
-    if (panelVisible) {
-      panel.classList.remove('hidden');
-      if (btn) btn.textContent = '◀';
+    if (panelCollapsed) {
+      expandPanel();
     } else {
-      panel.classList.add('hidden');
-      if (btn) btn.textContent = '▶';
+      collapsePanel();
     }
   }
 
-  function loadQuestions(questionList) {
+  function collapsePanel() {
+    const panel = $('#question-panel');
+    const btn = $('#btn-toggle-question');
+    const openBtn = $('#btn-open-question-panel');
+    if (!panel) return;
+
+    panelCollapsed = true;
+    panel.classList.add('collapsed');
+    if (btn) btn.textContent = '▶';
+    if (openBtn) openBtn.classList.remove('hidden');
+  }
+
+  function expandPanel() {
+    const panel = $('#question-panel');
+    const btn = $('#btn-toggle-question');
+    const openBtn = $('#btn-open-question-panel');
+    if (!panel) return;
+
+    panelCollapsed = false;
+    panel.classList.remove('collapsed');
+    if (btn) btn.textContent = '◀';
+    if (openBtn) openBtn.classList.add('hidden');
+  }
+
+  function loadQuestions(questionList, allowedUrlList = []) {
     questions = questionList || [];
+    allowedUrls = allowedUrlList || [];
     currentIdx = 0;
+    expandPanel();
 
     if (questions.length === 0) {
       renderEmpty();
@@ -49,6 +70,7 @@ const QuestionPanel = (() => {
     const q = questions[idx];
 
     let html = `<h3>${escapeHtml(q.title)}</h3>`;
+    html += renderAllowedUrls();
 
     // Simple markdown-like rendering for description
     html += `<div class="question-description">${renderMarkdown(q.description)}</div>`;
@@ -82,6 +104,69 @@ const QuestionPanel = (() => {
     if (questions.length > 1) {
       renderNav();
     }
+
+    wireAllowedUrlLinks();
+  }
+
+  function renderAllowedUrls() {
+    if (!Array.isArray(allowedUrls) || allowedUrls.length === 0) {
+      return '';
+    }
+
+    const links = allowedUrls.map((url, i) => {
+      const safeUrl = escapeHtml(url);
+      return `<button class="allowed-url-link" data-url="${safeUrl}" title="${safeUrl}">Doc ${i + 1}</button>`;
+    }).join('');
+
+    return `
+      <div class="allowed-urls-wrap">
+        <div class="allowed-urls-title">Allowed URLs</div>
+        <div class="allowed-urls-list">${links}</div>
+      </div>
+    `;
+  }
+
+  function normalizeUrl(u) {
+    return String(u || '').trim();
+  }
+
+  function isAllowedBySession(url) {
+    const normalized = normalizeUrl(url);
+    return allowedUrls.some(pattern => {
+      const p = normalizeUrl(pattern);
+      if (!p) return false;
+      if (p.endsWith('*')) {
+        return normalized.startsWith(p.slice(0, -1));
+      }
+      return normalized === p;
+    });
+  }
+
+  function wireAllowedUrlLinks() {
+    document.querySelectorAll('.allowed-url-link').forEach(el => {
+      el.addEventListener('click', async () => {
+        const url = el.dataset.url || '';
+        if (!url) return;
+
+        if (!isAllowedBySession(url)) {
+          alert('This URL is not allowed for this session.');
+          return;
+        }
+
+        try {
+          const validation = await invoke('validate_url', { url });
+          if (!validation?.allowed) {
+            alert(validation?.reason || 'Blocked by policy');
+            return;
+          }
+          window.open(url, '_blank', 'noopener,noreferrer');
+          appendOutput('info', `Opened allowed URL: ${url}`);
+        } catch (err) {
+          console.error('Failed to open allowed URL:', err);
+          alert('Unable to open URL: ' + (err.message || err));
+        }
+      });
+    });
   }
 
   function renderNav() {
@@ -134,5 +219,5 @@ const QuestionPanel = (() => {
     return div.innerHTML;
   }
 
-  return { init, loadQuestions, togglePanel };
+  return { init, loadQuestions, togglePanel, expandPanel };
 })();

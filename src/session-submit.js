@@ -7,6 +7,10 @@
 const SubmitFlow = (() => {
   let submitted = false;
 
+  const SUBMITTABLE_EXTENSIONS = new Set([
+    '.c', '.cpp', '.h', '.hpp', '.py', '.java', '.js', '.ts', '.txt', '.md', '.json'
+  ]);
+
   function init() {
     // Manual submit button
     $('#btn-submit-code')?.addEventListener('click', handleSubmit);
@@ -35,41 +39,47 @@ const SubmitFlow = (() => {
     const data = Session.sessionData;
     if (!data) return;
 
-    // Get current code from editor
-    const code = $('#code-editor')?.value || '';
-    const filename = IDE.openTabs?.[IDE.activeTab]?.name || 'untitled.txt';
+    const filesToSubmit = await collectSubmissionFiles();
+    if (filesToSubmit.length === 0) {
+      filesToSubmit.push({
+        filename: IDE.openTabs?.[IDE.activeTab]?.name || 'untitled.txt',
+        content: $('#code-editor')?.value || '',
+      });
+    }
 
     try {
       // Check if remote server
       const isRemote = data.server && data.server.split(':')[0].toLowerCase() !== 'localhost' && data.server.split(':')[0].toLowerCase() !== '127.0.0.1';
-      
-      if (isRemote) {
-        // Submit via HTTP to remote LAN server
-        const submitUrl = `http://${data.server}/api/session/${data.id}/submit`;
-        const response = await fetch(submitUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            student_id: data.studentId,
-            filename,
-            content: code,
-            lang: data.language || guessLanguage(filename),
-          }),
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `HTTP ${response.status}`);
+
+      for (const file of filesToSubmit) {
+        if (isRemote) {
+          // Submit via HTTP to remote LAN server
+          const submitUrl = `http://${data.server}/api/session/${data.id}/submit`;
+          const response = await fetch(submitUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_id: data.studentId,
+              filename: file.filename,
+              content: file.content,
+              lang: data.language || guessLanguage(file.filename),
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+          }
+        } else {
+          // Local IPC submit
+          await invoke('submit_code_cmd', {
+            sessionId: data.id,
+            studentId: data.studentId,
+            filename: file.filename,
+            content: file.content,
+            lang: data.language || guessLanguage(file.filename),
+          });
         }
-      } else {
-        // Local IPC submit
-        await invoke('submit_code_cmd', {
-          sessionId: data.id,
-          studentId: data.studentId,
-          filename,
-          content: code,
-          lang: data.language || guessLanguage(filename),
-        });
       }
 
       // Stop timers
@@ -80,7 +90,7 @@ const SubmitFlow = (() => {
       }
 
       // Show lock screen
-      showCompletionScreen(data, code, isAuto);
+      showCompletionScreen(data, filesToSubmit, isAuto);
 
     } catch (err) {
       console.error('Submit error:', err);
@@ -95,12 +105,14 @@ const SubmitFlow = (() => {
     }
   }
 
-  function showCompletionScreen(data, code, isAuto) {
+  function showCompletionScreen(data, submittedFiles, isAuto) {
+    const primary = submittedFiles[0] || { filename: 'untitled.txt', content: '' };
+
     // Fill completion details
     $('#complete-student-id').textContent = data.studentId || '--';
     $('#complete-submit-time').textContent = new Date().toLocaleString();
     $('#complete-session-name').textContent = data.name || '--';
-    $('#complete-code').textContent = code;
+    $('#complete-code').textContent = primary.content;
 
     // Hide student session bar and question panel
     const studentBar = $('#student-session-bar');
@@ -119,10 +131,67 @@ const SubmitFlow = (() => {
     Session.showScreen('complete');
 
     if (isAuto) {
-      appendOutput('info', '⏰ Time is up! Your code has been auto-submitted.');
+      appendOutput('info', `⏰ Time is up! Auto-submitted ${submittedFiles.length} file(s).`);
     } else {
-      appendOutput('info', '✅ Code submitted successfully.');
+      appendOutput('info', `✅ Submitted ${submittedFiles.length} file(s) successfully.`);
     }
+  }
+
+  function getExt(name) {
+    const dot = name.lastIndexOf('.');
+    return dot >= 0 ? name.slice(dot).toLowerCase() : '';
+  }
+
+  function shouldSubmitFile(name) {
+    return SUBMITTABLE_EXTENSIONS.has(getExt(name));
+  }
+
+  function toRelativeFilename(absPath) {
+    if (!absPath) return 'untitled.txt';
+    if (!IDE?.sandboxPath) return absPath;
+    const prefix = IDE.sandboxPath.endsWith('\\') || IDE.sandboxPath.endsWith('/')
+      ? IDE.sandboxPath
+      : `${IDE.sandboxPath}\\`;
+    const rel = absPath.startsWith(prefix) ? absPath.slice(prefix.length) : absPath;
+    return rel.replace(/\\/g, '/');
+  }
+
+  async function collectPathsRecursive(dirPath, out) {
+    const entries = await invoke('list_dir', { dirPath });
+    for (const entry of entries) {
+      if (entry.is_directory) {
+        await collectPathsRecursive(entry.path, out);
+      } else if (entry.is_file && shouldSubmitFile(entry.name)) {
+        out.push(entry.path);
+      }
+    }
+  }
+
+  async function collectSubmissionFiles() {
+    const filePaths = [];
+    await collectPathsRecursive(IDE.sandboxPath, filePaths);
+
+    const openTabContent = new Map();
+    for (const tab of IDE.openTabs || []) {
+      if (tab?.path) {
+        openTabContent.set(tab.path, tab.content || '');
+      }
+    }
+
+    const files = [];
+    for (const path of filePaths) {
+      const filename = toRelativeFilename(path);
+      try {
+        const content = openTabContent.has(path)
+          ? openTabContent.get(path)
+          : await invoke('read_file', { filePath: path });
+        files.push({ filename, content });
+      } catch (err) {
+        console.warn('Skipping unreadable file during submit:', path, err);
+      }
+    }
+
+    return files;
   }
 
   function guessLanguage(filename) {
