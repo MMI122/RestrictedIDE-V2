@@ -91,15 +91,33 @@ impl LanServer {
 
     /// Get the server's local IP address (useful for displaying to students).
     pub fn local_ip() -> Option<String> {
-        // Try to find the first non-loopback IPv4 address
+        // Prefer RFC1918 private IPv4 addresses (e.g. 192.168.x.x, 10.x.x.x)
+        // and avoid link-local 169.254.x.x addresses that are usually not
+        // reachable from other devices on the LAN.
         let addrs = local_ip_address::list_afinet_netifas();
         if let Ok(addrs) = addrs {
+            // Pass 1: best candidate = private, non-loopback, non-link-local IPv4.
             for (_, ip) in addrs {
-                if ip.is_ipv4() && !ip.is_loopback() {
-                    return Some(ip.to_string());
+                if let std::net::IpAddr::V4(v4) = ip {
+                    if v4.is_private() && !v4.is_loopback() && !v4.is_link_local() {
+                        return Some(v4.to_string());
+                    }
                 }
             }
         }
+
+        // Pass 2: fallback to any non-loopback, non-link-local IPv4.
+        let addrs = local_ip_address::list_afinet_netifas();
+        if let Ok(addrs) = addrs {
+            for (_, ip) in addrs {
+                if let std::net::IpAddr::V4(v4) = ip {
+                    if !v4.is_loopback() && !v4.is_link_local() {
+                        return Some(v4.to_string());
+                    }
+                }
+            }
+        }
+
         Some("127.0.0.1".to_string())
     }
 }
