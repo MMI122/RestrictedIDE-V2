@@ -95,12 +95,23 @@ const JoinSession = (() => {
     if (!IDE?.sandboxPath) return;
 
     const rootEntries = await invoke('list_dir', { dirPath: IDE.sandboxPath });
+    let skipped = 0;
     for (const entry of rootEntries) {
-      await invoke('delete_file', { filePath: entry.path });
+      try {
+        await invoke('delete_file', { filePath: entry.path });
+      } catch (err) {
+        // Policy may block some extensions (for example .exe artifacts).
+        // Do not fail session join because of a non-critical cleanup miss.
+        skipped += 1;
+        console.warn('Sandbox cleanup skipped:', entry.path, err);
+      }
     }
 
     resetEditorUiToEmpty();
     await FileTree.load(IDE.sandboxPath);
+    if (skipped > 0) {
+      appendOutput('info', `Sandbox cleanup skipped ${skipped} blocked item(s).`);
+    }
   }
 
   function beginStudentSession(statusResp) {
