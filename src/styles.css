@@ -1602,6 +1602,94 @@ button {
   color: var(--text-bright);
 }
 
+.doc-viewer {
+  position: fixed;
+  left: 80px;
+  right: 360px;
+  top: calc(var(--toolbar-height) + 12px);
+  bottom: calc(var(--statusbar-height) + 12px);
+  z-index: 120;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+}
+
+.doc-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.doc-viewer-title-wrap {
+  min-width: 0;
+}
+
+.doc-viewer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.doc-viewer-url {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 700px;
+}
+
+.doc-viewer-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.doc-viewer-close:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+.doc-viewer-loading {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-viewer-content {
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+
+@media (max-width: 1100px) {
+  .doc-viewer {
+    left: 12px;
+    right: 12px;
+    top: calc(var(--toolbar-height) + 8px);
+    bottom: calc(var(--statusbar-height) + 8px);
+  }
+}
+
 .question-content p {
   margin-bottom: 10px;
 }

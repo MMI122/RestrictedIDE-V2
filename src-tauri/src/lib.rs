@@ -92,6 +92,7 @@ pub fn run() {
             commands::system_commands::get_system_status,
             // Policy
             commands::policy_commands::validate_url,
+            commands::policy_commands::fetch_allowed_doc_cmd,
             commands::policy_commands::validate_keyboard,
             commands::policy_commands::get_policy,
             commands::policy_commands::search_in_files,
