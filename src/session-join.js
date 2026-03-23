@@ -125,6 +125,8 @@ const JoinSession = (() => {
     studentSessionStarted = true;
     stopWaitForStart();
 
+    activateKioskMode();
+
     hideStatus();
     Session.enterStudentSession();
 
@@ -499,7 +501,7 @@ const JoinSession = (() => {
   async function runSecurityChecks() {
     // Run pre-join security checks (VM, multi-monitor)
     try {
-      // For local sessions, run native security checks
+      // Run native checks on the student's own device
       const vmCheckResult = await invoke('check_vm').catch(e => {
         console.warn('VM check unavailable:', e);
         return { vm_detected: false };
@@ -559,15 +561,14 @@ const JoinSession = (() => {
     try {
       showStatus('Running security checks...');
       
-      // Run pre-join security checks (local only, skip for remote HTTP join)
-      const isRemote = isRemoteServer(server);
-      if (!isRemote) {
-        const checksOk = await runSecurityChecks();
-        if (!checksOk) {
-          hideStatus();
-          return; // Security check failed, error already shown
-        }
+      // Run pre-join security checks on student device for both local and remote joins
+      const checksOk = await runSecurityChecks();
+      if (!checksOk) {
+        hideStatus();
+        return; // Security check failed, error already shown
       }
+
+      const isRemote = isRemoteServer(server);
 
       btn.textContent = 'Connecting...';
       showStatus('Connecting to server...');
@@ -616,9 +617,6 @@ const JoinSession = (() => {
 
       // Small delay for UX
       setTimeout(() => {
-        // Activate kiosk lockdown on join
-        activateKioskMode();
-
         // Start heartbeat
         disconnectAutoSubmitTriggered = false;
         disconnectGraceRemaining = getDisconnectGraceSeconds();

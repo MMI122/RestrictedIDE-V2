@@ -66,16 +66,53 @@ pub struct SecurityStatus {
 }
 
 /// Enable or disable kiosk mode lockdown.
-/// Currently a confirmation that security controls are active.
-/// Future: can toggle individual security features on/off per-session.
 #[tauri::command]
-pub fn set_kiosk_mode(enabled: bool) -> serde_json::Value {
+pub fn set_kiosk_mode(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> serde_json::Value {
     log::info!("[Security] Kiosk mode requested: enabled={}", enabled);
-    
-    // For now, security controls (keyboard hooks, focus watchdog, process monitor)
-    // are always active at app startup. This command confirms the request.
-    // In future phases, we can make security toggleable per-session.
-    
+
+    let cfg = state.config.lock().unwrap().clone();
+
+    #[cfg(target_os = "windows")]
+    {
+        if enabled {
+            crate::security::keyboard_hook::start_keyboard_hook(
+                cfg.input_control.blocked_combinations.clone(),
+            );
+            crate::security::process_monitor::start_process_monitor(
+                cfg.process_control.blacklist.clone(),
+                cfg.process_control.monitor_interval_ms,
+            );
+            crate::security::clipboard_guard::start_clipboard_guard();
+
+            if cfg.input_control.mouse_confinement {
+                crate::security::mouse_confinement::confine_cursor_to_foreground();
+            }
+
+            if cfg.security.screenshot_prevention {
+                crate::security::screenshot_guard::enable_screenshot_prevention(None);
+            }
+
+            if cfg.security.focus_watchdog {
+                crate::security::focus_watchdog::start_focus_watchdog(
+                    app.clone(),
+                    cfg.security.focus_poll_ms,
+                );
+            }
+        } else {
+            crate::security::keyboard_hook::stop_keyboard_hook();
+            crate::security::process_monitor::stop_process_monitor();
+            crate::security::clipboard_guard::stop_clipboard_guard();
+            crate::security::focus_watchdog::stop_focus_watchdog();
+            crate::security::mouse_confinement::release_cursor();
+
+            crate::security::screenshot_guard::disable_screenshot_prevention(None);
+        }
+    }
+
     serde_json::json!({
         "success": true,
         "message": if enabled { "Kiosk mode active" } else { "Kiosk mode disabled (exam mode may be unsafe)" }

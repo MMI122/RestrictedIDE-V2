@@ -5,14 +5,18 @@
 
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use windows::Win32::Foundation::*;
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Global storage for the set of blocked key-combo hashes.
 static BLOCKED_COMBOS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
+static HOOK_THREAD_ID: OnceCell<Mutex<Option<u32>>> = OnceCell::new();
+static KEYBOARD_HOOK_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Normalise a set of key names into a canonical, sorted, lower-case string.
 fn normalize(keys: &[&str]) -> String {
@@ -131,19 +135,37 @@ unsafe extern "system" fn keyboard_proc(
 
 /// Install the keyboard hook on a dedicated thread with a message loop.
 pub fn start_keyboard_hook(combos: Vec<Vec<String>>) {
+    if KEYBOARD_HOOK_RUNNING.swap(true, Ordering::SeqCst) {
+        log::warn!("[Security] Keyboard hook already running");
+        return;
+    }
+
     // Build the blocked set
     let mut set = HashSet::new();
     for combo in &combos {
         let refs: Vec<&str> = combo.iter().map(|s| s.as_str()).collect();
         set.insert(normalize(&refs));
     }
-    let _ = BLOCKED_COMBOS.set(Mutex::new(set));
+    if let Some(existing) = BLOCKED_COMBOS.get() {
+        if let Ok(mut lock) = existing.lock() {
+            *lock = set;
+        }
+    } else {
+        let _ = BLOCKED_COMBOS.set(Mutex::new(set));
+    }
+
+    let thread_slot = HOOK_THREAD_ID.get_or_init(|| Mutex::new(None));
 
     std::thread::spawn(|| {
         unsafe {
+            let tid = GetCurrentThreadId();
+            if let Ok(mut slot) = thread_slot.lock() {
+                *slot = Some(tid);
+            }
+
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0);
             match hook {
-                Ok(_h) => {
+                Ok(h) => {
                     log::info!("[Security] Low-level keyboard hook installed");
                     // Message loop – required for LL hooks
                     let mut msg = MSG::default();
@@ -151,11 +173,39 @@ pub fn start_keyboard_hook(combos: Vec<Vec<String>>) {
                         let _ = TranslateMessage(&msg);
                         DispatchMessageW(&msg);
                     }
+
+                    let _ = UnhookWindowsHookEx(h);
+                    KEYBOARD_HOOK_RUNNING.store(false, Ordering::SeqCst);
+                    if let Ok(mut slot) = thread_slot.lock() {
+                        *slot = None;
+                    }
+                    log::info!("[Security] Keyboard hook stopped");
                 }
                 Err(e) => {
+                    KEYBOARD_HOOK_RUNNING.store(false, Ordering::SeqCst);
+                    if let Ok(mut slot) = thread_slot.lock() {
+                        *slot = None;
+                    }
                     log::error!("[Security] Failed to install keyboard hook: {:?}", e);
                 }
             }
         }
     });
+}
+
+pub fn stop_keyboard_hook() {
+    if !KEYBOARD_HOOK_RUNNING.load(Ordering::SeqCst) {
+        return;
+    }
+
+    if let Some(slot) = HOOK_THREAD_ID.get() {
+        if let Ok(lock) = slot.lock() {
+            if let Some(tid) = *lock {
+                unsafe {
+                    let _ = PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0));
+                }
+                log::info!("[Security] Keyboard hook stop requested");
+            }
+        }
+    }
 }

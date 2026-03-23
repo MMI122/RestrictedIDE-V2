@@ -4,11 +4,20 @@
 //! blacklist.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use sysinfo::{ProcessesToUpdate, System};
+
+static PROCESS_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Spawn a background thread that polls processes at the configured interval.
 pub fn start_process_monitor(blacklist: Vec<String>, interval_ms: u64) {
+    if PROCESS_MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
+        log::warn!("[Security] Process monitor already running");
+        return;
+    }
+
     if blacklist.is_empty() {
+        PROCESS_MONITOR_RUNNING.store(false, Ordering::SeqCst);
         log::info!("[Security] Process blacklist empty – monitor skipped");
         return;
     }
@@ -21,6 +30,11 @@ pub fn start_process_monitor(blacklist: Vec<String>, interval_ms: u64) {
         let mut sys = System::new();
 
         loop {
+            if !PROCESS_MONITOR_RUNNING.load(Ordering::SeqCst) {
+                log::info!("[Security] Process monitor stopped");
+                break;
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(interval_ms));
 
             sys.refresh_processes(ProcessesToUpdate::All, true);
@@ -35,4 +49,9 @@ pub fn start_process_monitor(blacklist: Vec<String>, interval_ms: u64) {
             }
         }
     });
+}
+
+pub fn stop_process_monitor() {
+    PROCESS_MONITOR_RUNNING.store(false, Ordering::SeqCst);
+    log::info!("[Security] Process monitor stop requested");
 }

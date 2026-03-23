@@ -222,7 +222,7 @@ impl AppConfig {
                 sandbox: sandbox.clone(),
             },
             kiosk_mode: KioskConfig {
-                enabled: force_kiosk || !is_dev,
+                enabled: force_kiosk,
                 admin_can_close: true,
                 admin_access_combo: vec![
                     "ctrl".into(),
