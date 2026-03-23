@@ -914,6 +914,55 @@ button {
   font-family: var(--font-ui);
 }
 
+.testcases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.testcase-row {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.testcase-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.testcase-row-head span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.remove-testcase-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--error);
+  background: transparent;
+  border: 1px solid var(--error);
+  cursor: pointer;
+}
+
+.add-testcase-btn {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--accent);
+  cursor: pointer;
+}
+
 /* ═══════ URL WHITELIST ═══════ */
 
 .url-card {
@@ -1759,6 +1808,21 @@ button {
   color: var(--accent);
 }
 
+.testcase-view {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 8px;
+  background: var(--bg-tertiary);
+}
+
+.testcase-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
 /* ═══════ SESSION COMPLETE LOCK SCREEN ═══════ */
 
 .session-complete-container {
@@ -2030,6 +2094,12 @@ button {
 .sub-badge.partial   { background: #fd7e14; color: #fff; }
 .sub-badge.compile_error { background: #e83e8c; color: #fff; }
 .sub-badge.timeout   { background: #ffc107; color: #000; }
+
+.judge-case-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
 
 .post-main {
   flex: 1;

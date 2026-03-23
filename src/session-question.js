@@ -76,22 +76,38 @@ const QuestionPanel = (() => {
     // Simple markdown-like rendering for description
     html += `<div class="question-description">${renderMarkdown(q.description)}</div>`;
 
-    if (q.sample_input) {
-      html += `
-        <div class="question-section">
-          <strong>Sample Input:</strong>
-          <pre>${escapeHtml(q.sample_input)}</pre>
-        </div>
-      `;
-    }
+    const visibleCases = Array.isArray(q.visible_testcases) ? q.visible_testcases : [];
 
-    if (q.expected_output) {
-      html += `
-        <div class="question-section">
-          <strong>Expected Output:</strong>
-          <pre>${escapeHtml(q.expected_output)}</pre>
+    if (visibleCases.length > 0) {
+      html += '<div class="question-section"><strong>Sample Testcases:</strong></div>';
+      html += visibleCases.map((tc, i) => `
+        <div class="question-section testcase-view">
+          <div class="testcase-title">Case ${i + 1}</div>
+          <div><strong>Input:</strong></div>
+          <pre>${escapeHtml(tc.input || '')}</pre>
+          <div><strong>Expected Output:</strong></div>
+          <pre>${escapeHtml(tc.expected_output || '')}</pre>
         </div>
-      `;
+      `).join('');
+    } else {
+      const sampleInput = q.sample_input ?? q.input_data;
+      if (sampleInput) {
+        html += `
+          <div class="question-section">
+            <strong>Sample Input:</strong>
+            <pre>${escapeHtml(sampleInput)}</pre>
+          </div>
+        `;
+      }
+
+      if (q.expected_output) {
+        html += `
+          <div class="question-section">
+            <strong>Expected Output:</strong>
+            <pre>${escapeHtml(q.expected_output)}</pre>
+          </div>
+        `;
+      }
     }
 
     // Navigation between questions

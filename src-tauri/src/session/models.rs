@@ -71,8 +71,20 @@ pub struct SessionQuestion {
     pub description: String,
     pub input_data: Option<String>,
     pub expected_output: Option<String>,
+    #[serde(default)]
+    pub visible_testcases: Vec<TestCase>,
+    #[serde(default, skip_serializing)]
+    pub hidden_testcases: Vec<TestCase>,
     pub time_limit_ms: u32,
     pub order: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestCase {
+    pub input: String,
+    pub expected_output: String,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 // ─── Participant ────────────────────────────────────────────────────────────
@@ -187,6 +199,10 @@ pub struct QuestionInput {
     pub description: String,
     pub input_data: Option<String>,
     pub expected_output: Option<String>,
+    #[serde(default)]
+    pub visible_testcases: Vec<TestCase>,
+    #[serde(default)]
+    pub hidden_testcases: Vec<TestCase>,
     pub time_limit_ms: Option<u32>,
 }
 

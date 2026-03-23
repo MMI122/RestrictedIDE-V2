@@ -139,6 +139,8 @@ impl SessionTransport for LanTransport {
                 &q.description,
                 q.input_data.as_deref(),
                 q.expected_output.as_deref(),
+                &q.visible_testcases,
+                &q.hidden_testcases,
                 q.time_limit_ms.unwrap_or(5000),
                 i as u32,
             )?;

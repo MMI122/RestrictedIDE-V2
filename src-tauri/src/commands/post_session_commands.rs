@@ -15,6 +15,8 @@ pub struct JudgeResultEntry {
     pub student_id: String,
     pub filename: String,
     pub question_hint: Option<String>,
+    pub failed_case_index: Option<u32>,
+    pub total_cases: u32,
     pub lang: Option<String>,
     pub result: String,       // "pass" | "fail" | "partial" | "compile_error" | "timeout"
     pub stdout: Option<String>,
@@ -482,6 +484,30 @@ fn pick_question_for_submission<'a>(
     ordered_questions.first()
 }
 
+fn build_cases_for_question(
+    q: Option<&crate::session::models::SessionQuestion>,
+) -> Vec<crate::session::models::TestCase> {
+    let mut cases = Vec::new();
+
+    if let Some(question) = q {
+        cases.extend(question.visible_testcases.iter().cloned());
+        cases.extend(question.hidden_testcases.iter().cloned());
+
+        // Backward compatibility for legacy sessions with only single input/output.
+        if cases.is_empty() {
+            if let (Some(inp), Some(out)) = (&question.input_data, &question.expected_output) {
+                cases.push(crate::session::models::TestCase {
+                    input: inp.clone(),
+                    expected_output: out.clone(),
+                    hidden: false,
+                });
+            }
+        }
+    }
+
+    cases
+}
+
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// Batch judge all final submissions for a session.
@@ -508,18 +534,54 @@ pub async fn judge_submissions_cmd(
         let mut entries = Vec::new();
         for sub in &submissions {
             let matched_question = pick_question_for_submission(&sub.filename, &ordered_questions);
-            let input_data = matched_question.and_then(|q| q.input_data.as_deref());
-            let expected_output = matched_question.and_then(|q| q.expected_output.as_deref());
             let time_limit = matched_question.map(|q| q.time_limit_ms).unwrap_or(5000);
 
-            let (result, stdout, stderr, exec_ms) = judge_one(
-                &sub.filename,
-                &sub.content,
-                sub.lang.as_deref(),
-                input_data,
-                expected_output,
-                time_limit,
-            );
+            let cases = build_cases_for_question(matched_question);
+            let total_cases = if cases.is_empty() { 1 } else { cases.len() as u32 };
+
+            let mut result = String::from("pass");
+            let mut stdout: Option<String> = None;
+            let mut stderr: Option<String> = None;
+            let mut exec_ms_total: u32 = 0;
+            let mut failed_case_index: Option<u32> = None;
+
+            if cases.is_empty() {
+                let (r, out, err, exec_ms) = judge_one(
+                    &sub.filename,
+                    &sub.content,
+                    sub.lang.as_deref(),
+                    matched_question.and_then(|q| q.input_data.as_deref()),
+                    matched_question.and_then(|q| q.expected_output.as_deref()),
+                    time_limit,
+                );
+                result = r;
+                stdout = out;
+                stderr = err;
+                exec_ms_total = exec_ms.unwrap_or(0);
+            } else {
+                for (idx, case) in cases.iter().enumerate() {
+                    let (r, out, err, exec_ms) = judge_one(
+                        &sub.filename,
+                        &sub.content,
+                        sub.lang.as_deref(),
+                        Some(case.input.as_str()),
+                        Some(case.expected_output.as_str()),
+                        time_limit,
+                    );
+
+                    exec_ms_total = exec_ms_total.saturating_add(exec_ms.unwrap_or(0));
+                    stdout = out;
+                    stderr = err;
+
+                    if r != "pass" {
+                        result = r;
+                        failed_case_index = Some((idx + 1) as u32);
+                        break;
+                    }
+                }
+            }
+
+            let exec_ms = Some(exec_ms_total);
 
             // Update DB
             let _ = db.update_submission_result(
@@ -536,6 +598,8 @@ pub async fn judge_submissions_cmd(
                 filename: sub.filename.clone(),
                 question_hint: matched_question
                     .map(|q| format!("Q{}: {}", q.order + 1, q.title)),
+                failed_case_index,
+                total_cases,
                 lang: sub.lang.clone(),
                 result,
                 stdout,

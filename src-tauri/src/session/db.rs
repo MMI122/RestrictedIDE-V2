@@ -52,6 +52,8 @@ impl SessionDb {
                 description     TEXT NOT NULL DEFAULT '',
                 input_data      TEXT,
                 expected_output TEXT,
+                visible_testcases_json TEXT DEFAULT '[]',
+                hidden_testcases_json  TEXT DEFAULT '[]',
                 time_limit_ms   INTEGER DEFAULT 5000,
                 sort_order      INTEGER DEFAULT 0
             );
@@ -113,6 +115,16 @@ impl SessionDb {
             );
             ",
         )?;
+
+        // Backward-compatible schema upgrades for existing databases.
+        let _ = conn.execute(
+            "ALTER TABLE session_questions ADD COLUMN visible_testcases_json TEXT DEFAULT '[]'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE session_questions ADD COLUMN hidden_testcases_json TEXT DEFAULT '[]'",
+            [],
+        );
         Ok(())
     }
 
@@ -244,16 +256,31 @@ impl SessionDb {
         description: &str,
         input_data: Option<&str>,
         expected_output: Option<&str>,
+        visible_testcases: &[TestCase],
+        hidden_testcases: &[TestCase],
         time_limit_ms: u32,
         order: u32,
     ) -> SqlResult<SessionQuestion> {
         let id = Uuid::new_v4().to_string();
+        let visible_json = serde_json::to_string(visible_testcases).unwrap_or_else(|_| "[]".into());
+        let hidden_json = serde_json::to_string(hidden_testcases).unwrap_or_else(|_| "[]".into());
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO session_questions (id, session_id, title, description, input_data,
-             expected_output, time_limit_ms, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, session_id, title, description, input_data, expected_output, time_limit_ms, order],
+             expected_output, visible_testcases_json, hidden_testcases_json, time_limit_ms, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                id,
+                session_id,
+                title,
+                description,
+                input_data,
+                expected_output,
+                visible_json,
+                hidden_json,
+                time_limit_ms,
+                order
+            ],
         )?;
         Ok(SessionQuestion {
             id,
@@ -262,6 +289,8 @@ impl SessionDb {
             description: description.to_string(),
             input_data: input_data.map(String::from),
             expected_output: expected_output.map(String::from),
+            visible_testcases: visible_testcases.to_vec(),
+            hidden_testcases: hidden_testcases.to_vec(),
             time_limit_ms,
             order,
         })
@@ -271,20 +300,41 @@ impl SessionDb {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, title, description, input_data, expected_output,
-                    time_limit_ms, sort_order
+                    visible_testcases_json, hidden_testcases_json, time_limit_ms, sort_order
              FROM session_questions WHERE session_id = ?1 ORDER BY sort_order",
         )?;
         let qs = stmt
             .query_map(params![session_id], |row| {
+                let input_data: Option<String> = row.get(4)?;
+                let expected_output: Option<String> = row.get(5)?;
+                let visible_json: Option<String> = row.get(6)?;
+                let hidden_json: Option<String> = row.get(7)?;
+
+                let mut visible_testcases = parse_testcases_json(visible_json);
+                let hidden_testcases = parse_testcases_json(hidden_json);
+
+                // Backward compatibility: old sessions may only have one input/output pair.
+                if visible_testcases.is_empty() {
+                    if let (Some(inp), Some(out)) = (input_data.clone(), expected_output.clone()) {
+                        visible_testcases.push(TestCase {
+                            input: inp,
+                            expected_output: out,
+                            hidden: false,
+                        });
+                    }
+                }
+
                 Ok(SessionQuestion {
                     id: row.get(0)?,
                     session_id: row.get(1)?,
                     title: row.get(2)?,
                     description: row.get(3)?,
-                    input_data: row.get(4)?,
-                    expected_output: row.get(5)?,
-                    time_limit_ms: row.get(6)?,
-                    order: row.get(7)?,
+                    input_data,
+                    expected_output,
+                    visible_testcases,
+                    hidden_testcases,
+                    time_limit_ms: row.get(8)?,
+                    order: row.get(9)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -798,6 +848,11 @@ fn row_to_submission(row: &rusqlite::Row) -> SqlResult<Submission> {
 
 fn parse_dt_or_now(s: Option<String>) -> chrono::DateTime<Utc> {
     s.and_then(|v| v.parse().ok()).unwrap_or_else(Utc::now)
+}
+
+fn parse_testcases_json(s: Option<String>) -> Vec<TestCase> {
+    s.and_then(|v| serde_json::from_str::<Vec<TestCase>>(&v).ok())
+        .unwrap_or_default()
 }
 
 /// Generate a 6-character alphanumeric session code (uppercase).

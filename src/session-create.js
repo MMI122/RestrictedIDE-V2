@@ -80,12 +80,9 @@ const CreateSession = (() => {
         <textarea id="q-desc-${idx}" placeholder="Write the problem statement..." rows="4" required></textarea>
       </div>
       <div class="form-row">
-        <label for="q-input-${idx}">Sample Input (optional)</label>
-        <textarea id="q-input-${idx}" placeholder="e.g. 5" rows="2"></textarea>
-      </div>
-      <div class="form-row">
-        <label for="q-output-${idx}">Expected Output (optional)</label>
-        <textarea id="q-output-${idx}" placeholder="e.g. 0 1 1 2 3" rows="2"></textarea>
+        <label>Testcases</label>
+        <div class="testcases-list" id="q-tests-${idx}"></div>
+        <button type="button" class="add-testcase-btn" data-qidx="${idx}">+ Add Testcase</button>
       </div>
     `;
 
@@ -95,7 +92,48 @@ const CreateSession = (() => {
       renumberQuestions();
     });
 
+    card.querySelector('.add-testcase-btn').addEventListener('click', () => {
+      addTestcaseRow(card, { hidden: false });
+    });
+
     list.appendChild(card);
+    addTestcaseRow(card, { hidden: false });
+  }
+
+  function addTestcaseRow(card, seed = {}) {
+    const qidx = card.dataset.questionIdx;
+    const list = card.querySelector(`#q-tests-${qidx}`);
+    if (!list) return;
+
+    const caseIdx = Number(card.dataset.caseCount || 0) + 1;
+    card.dataset.caseCount = String(caseIdx);
+
+    const row = document.createElement('div');
+    row.className = 'testcase-row';
+    row.dataset.caseIdx = String(caseIdx);
+    row.innerHTML = `
+      <div class="testcase-row-head">
+        <span>Case ${caseIdx}</span>
+        <button type="button" class="remove-testcase-btn">✕</button>
+      </div>
+      <div class="form-row">
+        <label>Input</label>
+        <textarea class="tc-input" rows="2" placeholder="Input for this testcase">${seed.input || ''}</textarea>
+      </div>
+      <div class="form-row">
+        <label>Expected Output</label>
+        <textarea class="tc-output" rows="2" placeholder="Expected output for this testcase">${seed.output || ''}</textarea>
+      </div>
+      <div class="form-row checkbox-row">
+        <label><input type="checkbox" class="tc-hidden" ${seed.hidden ? 'checked' : ''} /> Hidden testcase</label>
+      </div>
+    `;
+
+    row.querySelector('.remove-testcase-btn').addEventListener('click', () => {
+      row.remove();
+    });
+
+    list.appendChild(row);
   }
 
   function renumberQuestions() {
@@ -113,14 +151,40 @@ const CreateSession = (() => {
       const idx = card.dataset.questionIdx;
       const title = card.querySelector(`#q-title-${idx}`)?.value?.trim() || `Question ${i + 1}`;
       const description = card.querySelector(`#q-desc-${idx}`)?.value?.trim() || '';
-      const sampleInput = card.querySelector(`#q-input-${idx}`)?.value?.trim() || '';
-      const expectedOutput = card.querySelector(`#q-output-${idx}`)?.value?.trim() || '';
+      const testcaseRows = Array.from(card.querySelectorAll('.testcase-row'));
+
+      const visible_testcases = [];
+      const hidden_testcases = [];
+
+      testcaseRows.forEach((row) => {
+        const input = row.querySelector('.tc-input')?.value ?? '';
+        const expectedOutput = row.querySelector('.tc-output')?.value ?? '';
+        const hidden = row.querySelector('.tc-hidden')?.checked ?? false;
+
+        if (!input.trim() && !expectedOutput.trim()) return;
+
+        const tc = {
+          input,
+          expected_output: expectedOutput,
+          hidden,
+        };
+
+        if (hidden) {
+          hidden_testcases.push(tc);
+        } else {
+          visible_testcases.push(tc);
+        }
+      });
+
+      const firstVisible = visible_testcases[0] || null;
 
       questions.push({
         title,
         description,
-        sample_input: sampleInput || null,
-        expected_output: expectedOutput || null,
+        sample_input: firstVisible?.input || null,
+        expected_output: firstVisible?.expected_output || null,
+        visible_testcases,
+        hidden_testcases,
       });
     });
     return questions;
@@ -164,6 +228,8 @@ const CreateSession = (() => {
         description: q.description,
         input_data: q.sample_input || null,
         expected_output: q.expected_output || null,
+        visible_testcases: q.visible_testcases || [],
+        hidden_testcases: q.hidden_testcases || [],
         time_limit_ms: null,
       }));
 

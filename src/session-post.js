@@ -174,13 +174,16 @@ const PostSession = (() => {
     body.innerHTML = results.map(r => {
       const state = getDisplayStatus(r);
       const badge = `<span class="sub-badge ${escapeHtml(r.result)}">${escapeHtml(r.result)}</span>`;
+      const caseHint = (r.failed_case_index && r.total_cases)
+        ? `<div class="judge-case-hint">Failed at case ${r.failed_case_index}/${r.total_cases}</div>`
+        : (r.total_cases ? `<div class="judge-case-hint">Passed ${r.total_cases}/${r.total_cases} cases</div>` : '');
       return `<tr>
         <td>${escapeHtml(r.student_id)}</td>
         <td>${escapeHtml(state)}</td>
         <td>${escapeHtml(r.filename)}</td>
         <td>${escapeHtml(r.question_hint || '--')}</td>
         <td>${escapeHtml(r.lang || '')}</td>
-        <td>${badge}</td>
+        <td>${badge}${caseHint}</td>
         <td>${r.exec_time_ms != null ? r.exec_time_ms : '--'}</td>
       </tr>`;
     }).join('');
