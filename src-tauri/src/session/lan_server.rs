@@ -293,6 +293,12 @@ async fn handle_heartbeat(
     Path(id): Path<String>,
     Json(body): Json<HeartbeatBody>,
 ) -> impl IntoResponse {
+    if let Ok(Some(session)) = db.get_session_by_id(&id) {
+        if session.status == SessionStatus::Ended {
+            return err_json(StatusCode::GONE, "Session has ended by administrator").into_response();
+        }
+    }
+
     if let Ok(Some(p)) = db.get_participant(&id, &body.student_id) {
         if p.state == ParticipantState::Kicked {
             return err_json(StatusCode::FORBIDDEN, "You have been removed from this session")

@@ -15,6 +15,7 @@ const JoinSession = (() => {
   const seenBroadcastIds = new Set();
   let waitForStartInterval = null;
   let studentSessionStarted = false;
+  let adminEndHandled = false;
 
   function getDisconnectGraceSeconds() {
     const v = Number(Session.sessionData?.disconnectGraceSeconds);
@@ -25,6 +26,11 @@ const JoinSession = (() => {
   function isRemovedError(err) {
     const msg = String(err?.message || err || '').toLowerCase();
     return msg.includes('removed') || msg.includes('kicked') || msg.includes('forbidden');
+  }
+
+  function isSessionEndedError(err) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    return msg.includes('session has ended') || msg.includes('session ended') || msg.includes('status: ended');
   }
 
   function normalizeSessionStatus(status) {
@@ -185,6 +191,40 @@ const JoinSession = (() => {
     reconnectInFlight = false;
     setConnectionState('disconnected', 'Removed');
     Session.showScreen('removed');
+  }
+
+  async function handleSessionEndedByAdmin() {
+    if (adminEndHandled) return;
+    adminEndHandled = true;
+
+    stopWaitForStart();
+    stopReconnectLoop();
+    stopDisconnectCountdown();
+    reconnectInFlight = false;
+    heartbeatFailures = 0;
+    disconnectGraceRemaining = getDisconnectGraceSeconds();
+    disconnectAutoSubmitTriggered = false;
+
+    if (Session.heartbeatInterval) {
+      clearInterval(Session.heartbeatInterval);
+      Session.heartbeatInterval = null;
+    }
+
+    setConnectionState('disconnected', 'Session Ended');
+    appendOutput('info', '⏹ Session ended by administrator. Submitting your work...');
+
+    try {
+      await invoke('set_kiosk_mode', { enabled: false });
+    } catch (err) {
+      console.warn('Kiosk disable warning after session end:', err);
+    }
+
+    try {
+      await SubmitFlow.autoSubmit();
+    } catch (err) {
+      console.error('Auto-submit on admin end failed:', err);
+      alert('Session ended by administrator, but auto-submit failed. Please contact the invigilator immediately.');
+    }
   }
 
   function init() {
@@ -568,6 +608,7 @@ const JoinSession = (() => {
       };
       Session.role = 'student';
       studentSessionStarted = false;
+      adminEndHandled = false;
       stopWaitForStart();
 
       showStatus('Preparing clean workspace...');
@@ -625,12 +666,22 @@ const JoinSession = (() => {
       try {
         await sendHeartbeatOnce();
         await pollBroadcasts();
+        const statusResp = await fetchSessionStatus();
+        const status = normalizeSessionStatus(statusResp?.session?.status);
+        if (status === 'ended') {
+          await handleSessionEndedByAdmin();
+          return;
+        }
         heartbeatFailures = 0;
         stopDisconnectCountdown();
         disconnectGraceRemaining = getDisconnectGraceSeconds();
         setConnectionState('connected', 'Connected');
       } catch (err) {
         console.warn('Heartbeat failed:', err);
+        if (isSessionEndedError(err)) {
+          await handleSessionEndedByAdmin();
+          return;
+        }
         if (isRemovedError(err)) {
           appendOutput('error', '⛔ You have been removed from this session by the administrator.');
           enterRemovedState();

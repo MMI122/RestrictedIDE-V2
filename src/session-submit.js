@@ -89,6 +89,12 @@ const SubmitFlow = (() => {
         JoinSession.stopConnectionRecovery();
       }
 
+      try {
+        await invoke('set_kiosk_mode', { enabled: false });
+      } catch (e) {
+        console.warn('Kiosk disable warning after submit:', e);
+      }
+
       // Show lock screen
       showCompletionScreen(data, filesToSubmit, isAuto);
 

@@ -257,6 +257,14 @@ impl SessionTransport for LanTransport {
     }
 
     fn heartbeat(&self, req: HeartbeatRequest) -> Result<(), TransportError> {
+        if let Some(session) = self.db.get_session_by_id(&req.session_id)? {
+            if session.status == SessionStatus::Ended {
+                return Err(TransportError::InvalidState(
+                    "Session has ended by administrator".into(),
+                ));
+            }
+        }
+
         if let Some(p) = self.db.get_participant(&req.session_id, &req.student_id)? {
             if p.state == ParticipantState::Kicked {
                 return Err(TransportError::InvalidState(
