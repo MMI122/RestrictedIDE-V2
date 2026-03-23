@@ -1749,6 +1749,31 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+.complete-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.complete-file-chip {
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.complete-file-chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .code-preview {
   padding: 16px;
   font-family: var(--font-mono);
@@ -1851,6 +1876,27 @@ button {
 .post-submission-list {
   flex: 1;
   overflow-y: auto;
+}
+
+.post-student-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.post-student-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.post-student-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .post-sub-item {

@@ -35,7 +35,7 @@ impl FileAccessRule {
         }
     }
 
-    pub fn validate(&self, file_path: &str, _operation: &str) -> ValidationResult {
+    pub fn validate(&self, file_path: &str, operation: &str) -> ValidationResult {
         if file_path.is_empty() {
             return ValidationResult {
                 allowed: false,
@@ -64,9 +64,10 @@ impl FileAccessRule {
             }
         }
 
-        // Extension filter (skip for directories)
+        // Extension filter (skip for directories). For delete operations we allow
+        // cleanup/removal of any file extension inside sandbox.
         let path = Path::new(file_path);
-        if path.extension().is_some() {
+        if operation != "delete" && path.extension().is_some() {
             let ext = format!(
                 ".{}",
                 path.extension().unwrap().to_string_lossy().to_lowercase()

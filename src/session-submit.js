@@ -113,6 +113,7 @@ const SubmitFlow = (() => {
     $('#complete-submit-time').textContent = new Date().toLocaleString();
     $('#complete-session-name').textContent = data.name || '--';
     $('#complete-code').textContent = primary.content;
+    renderCompletionFileList(submittedFiles, primary.filename);
 
     // Hide student session bar and question panel
     const studentBar = $('#student-session-bar');
@@ -135,6 +136,40 @@ const SubmitFlow = (() => {
     } else {
       appendOutput('info', `✅ Submitted ${submittedFiles.length} file(s) successfully.`);
     }
+  }
+
+  function renderCompletionFileList(files, activeFilename) {
+    const listEl = $('#complete-file-list');
+    const codeEl = $('#complete-code');
+    if (!listEl || !codeEl) return;
+
+    if (!files || files.length === 0) {
+      listEl.innerHTML = '';
+      return;
+    }
+
+    listEl.innerHTML = files.map((f, i) => {
+      const active = f.filename === activeFilename ? ' active' : '';
+      const safe = escapeHtml(f.filename);
+      return `<button class="complete-file-chip${active}" data-index="${i}">${safe}</button>`;
+    }).join('');
+
+    listEl.querySelectorAll('.complete-file-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const idx = Number(chip.dataset.index);
+        const file = Number.isFinite(idx) ? files[idx] : null;
+        if (!file) return;
+        codeEl.textContent = file.content || '';
+        listEl.querySelectorAll('.complete-file-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str || '');
+    return div.innerHTML;
   }
 
   function getExt(name) {

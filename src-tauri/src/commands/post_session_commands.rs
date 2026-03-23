@@ -14,6 +14,7 @@ pub struct JudgeResultEntry {
     pub submission_id: String,
     pub student_id: String,
     pub filename: String,
+    pub question_hint: Option<String>,
     pub lang: Option<String>,
     pub result: String,       // "pass" | "fail" | "partial" | "compile_error" | "timeout"
     pub stdout: Option<String>,
@@ -387,6 +388,100 @@ fn escape_csv(s: &str) -> String {
     }
 }
 
+fn normalized_token(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+fn file_stem_lower(filename: &str) -> String {
+    Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default()
+}
+
+fn extract_question_number(stem: &str) -> Option<usize> {
+    let chars: Vec<char> = stem.chars().collect();
+
+    for i in 0..chars.len() {
+        if chars[i] == 'q' {
+            let mut j = i + 1;
+            let mut digits = String::new();
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                digits.push(chars[j]);
+                j += 1;
+            }
+            if !digits.is_empty() {
+                if let Ok(v) = digits.parse::<usize>() {
+                    if v > 0 {
+                        return Some(v);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut run = String::new();
+    for ch in chars {
+        if ch.is_ascii_digit() {
+            run.push(ch);
+        } else if !run.is_empty() {
+            break;
+        }
+    }
+    if run.is_empty() {
+        None
+    } else {
+        run.parse::<usize>().ok().filter(|v| *v > 0)
+    }
+}
+
+fn pick_question_for_submission<'a>(
+    filename: &str,
+    ordered_questions: &'a [crate::session::models::SessionQuestion],
+) -> Option<&'a crate::session::models::SessionQuestion> {
+    if ordered_questions.is_empty() {
+        return None;
+    }
+
+    let stem = file_stem_lower(filename);
+    let stem_norm = normalized_token(&stem);
+
+    // 1) Exact normalized title match (e.g. fib.cpp -> "fib")
+    if !stem_norm.is_empty() {
+        if let Some(found) = ordered_questions
+            .iter()
+            .find(|q| normalized_token(&q.title) == stem_norm)
+        {
+            return Some(found);
+        }
+    }
+
+    // 2) Title token appears in stem (e.g. question_fib_solution.cpp)
+    if !stem_norm.is_empty() {
+        if let Some(found) = ordered_questions.iter().find(|q| {
+            let qn = normalized_token(&q.title);
+            !qn.is_empty() && stem_norm.contains(&qn)
+        }) {
+            return Some(found);
+        }
+    }
+
+    // 3) q<number> or any number in filename maps to question index (1-based)
+    if let Some(num) = extract_question_number(&stem) {
+        let idx = num.saturating_sub(1);
+        if idx < ordered_questions.len() {
+            return ordered_questions.get(idx);
+        }
+    }
+
+    // 4) Fallback first question
+    ordered_questions.first()
+}
+
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// Batch judge all final submissions for a session.
@@ -401,12 +496,8 @@ pub async fn judge_submissions_cmd(
     // Get questions (for input/expected output per question)
     let questions = db.get_questions(&session_id).map_err(|e| e.to_string())?;
 
-    // Build a map from question order index (0-based) to question
-    // For now, we use the first question's input/expected for all submissions
-    // since students submit one file per session currently.
-    let default_input = questions.first().and_then(|q| q.input_data.clone());
-    let default_expected = questions.first().and_then(|q| q.expected_output.clone());
-    let default_time_limit = questions.first().map(|q| q.time_limit_ms).unwrap_or(5000);
+    let mut ordered_questions = questions;
+    ordered_questions.sort_by_key(|q| q.order);
 
     let submissions = db
         .get_final_submissions(&session_id)
@@ -416,13 +507,18 @@ pub async fn judge_submissions_cmd(
     let results = tokio::task::spawn_blocking(move || {
         let mut entries = Vec::new();
         for sub in &submissions {
+            let matched_question = pick_question_for_submission(&sub.filename, &ordered_questions);
+            let input_data = matched_question.and_then(|q| q.input_data.as_deref());
+            let expected_output = matched_question.and_then(|q| q.expected_output.as_deref());
+            let time_limit = matched_question.map(|q| q.time_limit_ms).unwrap_or(5000);
+
             let (result, stdout, stderr, exec_ms) = judge_one(
                 &sub.filename,
                 &sub.content,
                 sub.lang.as_deref(),
-                default_input.as_deref(),
-                default_expected.as_deref(),
-                default_time_limit,
+                input_data,
+                expected_output,
+                time_limit,
             );
 
             // Update DB
@@ -438,6 +534,8 @@ pub async fn judge_submissions_cmd(
                 submission_id: sub.id.clone(),
                 student_id: sub.student_id.clone(),
                 filename: sub.filename.clone(),
+                question_hint: matched_question
+                    .map(|q| format!("Q{}: {}", q.order + 1, q.title)),
                 lang: sub.lang.clone(),
                 result,
                 stdout,

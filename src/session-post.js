@@ -48,6 +48,11 @@ const PostSession = (() => {
     }
 
     $('#post-submission-count').textContent = submissions.length;
+
+    submissions.sort((a, b) => {
+      if (a.student_id !== b.student_id) return String(a.student_id).localeCompare(String(b.student_id));
+      return new Date(b.submitted_at) - new Date(a.submitted_at);
+    });
     renderSidebar();
   }
 
@@ -60,19 +65,42 @@ const PostSession = (() => {
       return;
     }
 
-    list.innerHTML = submissions.map((s, i) => {
-      const result = (s.judge_result || 'pending').toLowerCase();
-      const state = getDisplayStatus(s);
-      const active = i === selectedIndex ? ' active' : '';
-      return `
-        <div class="post-sub-item${active}" data-index="${i}" onclick="PostSession.selectSubmission(${i})">
-          <div>
-            <div class="sub-student">${escapeHtml(s.student_id)}</div>
-            <div class="sub-file">${escapeHtml(s.filename)} • ${escapeHtml(state)}</div>
+    const grouped = new Map();
+    submissions.forEach((s, i) => {
+      const key = String(s.student_id || 'unknown');
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push({ sub: s, idx: i });
+    });
+
+    let html = '';
+    for (const [studentId, rows] of grouped.entries()) {
+      html += `
+        <div class="post-student-group">
+          <div class="post-student-head">${escapeHtml(studentId)} <span class="post-student-count">${rows.length}</span></div>
+      `;
+      html += rows.map(({ sub, idx }) => {
+        const result = (sub.judge_result || 'pending').toLowerCase();
+        const state = getDisplayStatus(sub);
+        const active = idx === selectedIndex ? ' active' : '';
+        return `
+          <div class="post-sub-item${active}" data-index="${idx}">
+            <div>
+              <div class="sub-file">${escapeHtml(sub.filename)} • ${escapeHtml(state)}</div>
+            </div>
+            <span class="sub-badge ${escapeHtml(result)}">${escapeHtml(result)}</span>
           </div>
-          <span class="sub-badge ${escapeHtml(result)}">${escapeHtml(result)}</span>
-        </div>`;
-    }).join('');
+        `;
+      }).join('');
+      html += '</div>';
+    }
+
+    list.innerHTML = html;
+    list.querySelectorAll('.post-sub-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.index);
+        if (Number.isFinite(idx)) selectSubmission(idx);
+      });
+    });
   }
 
   function selectSubmission(index) {
@@ -150,6 +178,7 @@ const PostSession = (() => {
         <td>${escapeHtml(r.student_id)}</td>
         <td>${escapeHtml(state)}</td>
         <td>${escapeHtml(r.filename)}</td>
+        <td>${escapeHtml(r.question_hint || '--')}</td>
         <td>${escapeHtml(r.lang || '')}</td>
         <td>${badge}</td>
         <td>${r.exec_time_ms != null ? r.exec_time_ms : '--'}</td>
