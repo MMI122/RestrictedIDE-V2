@@ -205,13 +205,34 @@ const QuestionPanel = (() => {
         throw err;
       }
 
-      // Fallback for anti-bot/CSP sites: load directly in iframe after local allowlist gate.
-      titleEl.textContent = 'Direct View';
+      // Fallback for anti-bot/CSP sites : many block both fetch and iframe.; yeah a workaround ig. if anybody has better ideas lmk
+      // Use external browser as a controlled workaround after allowlist validation.
+      titleEl.textContent = 'External Browser Required';
       urlEl.textContent = url;
-      frameEl.srcdoc = '';
-      frameEl.src = url;
+      frameEl.removeAttribute('src');
+      frameEl.srcdoc = `
+        <html>
+          <body style="font-family:Segoe UI,sans-serif;padding:18px;background:#111;color:#ddd;line-height:1.5;">
+            <h3 style="margin:0 0 10px 0;color:#fff;">Embedded view blocked by website</h3>
+            <p style="margin:0 0 10px 0;">This allowed URL cannot be rendered inside the IDE viewer.</p>
+            <p style="margin:0;word-break:break-all;color:#9ad;">${escapeHtml(url)}</p>
+          </body>
+        </html>
+      `;
       loadingEl.classList.add('hidden');
-      appendOutput('info', `Direct viewer fallback used for: ${url}`);
+
+      const shouldOpen = confirm('This site blocks in-app viewing. Open it in your default browser?');
+      if (shouldOpen) {
+        openExternalAllowedUrl(url);
+      }
+      appendOutput('info', `External-browser fallback available for: ${url}`);
+    }
+  }
+
+  function openExternalAllowedUrl(url) {
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      alert('Unable to open the external browser automatically. Please copy this URL:\n' + url);
     }
   }
 
