@@ -1669,16 +1669,12 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
-.doc-viewer-content {
+.doc-viewer-frame {
   flex: 1;
   margin: 0;
-  padding: 14px;
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  color: var(--text-primary);
+  width: 100%;
+  border: none;
+  background: #fff;
 }
 
 @media (max-width: 1100px) {

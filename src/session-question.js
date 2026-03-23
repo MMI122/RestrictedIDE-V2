@@ -170,31 +170,37 @@ const QuestionPanel = (() => {
     const titleEl = $('#doc-viewer-title');
     const urlEl = $('#doc-viewer-url');
     const loadingEl = $('#doc-viewer-loading');
-    const contentEl = $('#doc-viewer-content');
-    if (!viewer || !titleEl || !urlEl || !loadingEl || !contentEl) {
+    const frameEl = $('#doc-viewer-frame');
+    if (!viewer || !titleEl || !urlEl || !loadingEl || !frameEl) {
       throw new Error('Docs viewer UI is not available');
     }
 
     viewer.classList.remove('hidden');
     loadingEl.classList.remove('hidden');
-    contentEl.textContent = '';
+    frameEl.srcdoc = '<html><body style="font-family:sans-serif;padding:16px;">Loading document...</body></html>';
     titleEl.textContent = 'Loading...';
     urlEl.textContent = url;
 
-    const data = await invoke('fetch_allowed_doc_cmd', { url });
+    const data = await invoke('fetch_allowed_doc_cmd', {
+      url,
+      allowedUrls: allowedUrls || [],
+    });
 
     titleEl.textContent = data?.title || 'Documentation';
     urlEl.textContent = data?.url || url;
-    contentEl.textContent = data?.content || 'No content available.';
+
+    const html = String(data?.html || '').trim();
+    const safeBase = escapeHtmlAttr(data?.url || url);
+    frameEl.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${safeBase}"></head><body>${html}</body></html>`;
     loadingEl.classList.add('hidden');
   }
 
   function closeDocViewer() {
     const viewer = $('#doc-viewer');
-    const contentEl = $('#doc-viewer-content');
+    const frameEl = $('#doc-viewer-frame');
     const loadingEl = $('#doc-viewer-loading');
     if (viewer) viewer.classList.add('hidden');
-    if (contentEl) contentEl.textContent = '';
+    if (frameEl) frameEl.srcdoc = '';
     if (loadingEl) loadingEl.classList.add('hidden');
   }
 
@@ -246,6 +252,14 @@ const QuestionPanel = (() => {
     const div = document.createElement('div');
     div.textContent = str || '';
     return div.innerHTML;
+  }
+
+  function escapeHtmlAttr(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   return { init, loadQuestions, togglePanel, expandPanel };
