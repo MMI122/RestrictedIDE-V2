@@ -14,6 +14,7 @@ const QuestionPanel = (() => {
     // Toggle panel
     $('#btn-toggle-question')?.addEventListener('click', togglePanel);
     $('#btn-open-question-panel')?.addEventListener('click', expandPanel);
+    $('#btn-close-doc-viewer')?.addEventListener('click', closeDocViewer);
   }
 
   function togglePanel() {
@@ -154,19 +155,47 @@ const QuestionPanel = (() => {
         }
 
         try {
-          const validation = await invoke('validate_url', { url });
-          if (!validation?.allowed) {
-            alert(validation?.reason || 'Blocked by policy');
-            return;
-          }
-          window.open(url, '_blank', 'noopener,noreferrer');
-          appendOutput('info', `Opened allowed URL: ${url}`);
+          await openDocViewer(url);
+          appendOutput('info', `Opened allowed URL in viewer: ${url}`);
         } catch (err) {
           console.error('Failed to open allowed URL:', err);
           alert('Unable to open URL: ' + (err.message || err));
         }
       });
     });
+  }
+
+  async function openDocViewer(url) {
+    const viewer = $('#doc-viewer');
+    const titleEl = $('#doc-viewer-title');
+    const urlEl = $('#doc-viewer-url');
+    const loadingEl = $('#doc-viewer-loading');
+    const contentEl = $('#doc-viewer-content');
+    if (!viewer || !titleEl || !urlEl || !loadingEl || !contentEl) {
+      throw new Error('Docs viewer UI is not available');
+    }
+
+    viewer.classList.remove('hidden');
+    loadingEl.classList.remove('hidden');
+    contentEl.textContent = '';
+    titleEl.textContent = 'Loading...';
+    urlEl.textContent = url;
+
+    const data = await invoke('fetch_allowed_doc_cmd', { url });
+
+    titleEl.textContent = data?.title || 'Documentation';
+    urlEl.textContent = data?.url || url;
+    contentEl.textContent = data?.content || 'No content available.';
+    loadingEl.classList.add('hidden');
+  }
+
+  function closeDocViewer() {
+    const viewer = $('#doc-viewer');
+    const contentEl = $('#doc-viewer-content');
+    const loadingEl = $('#doc-viewer-loading');
+    if (viewer) viewer.classList.add('hidden');
+    if (contentEl) contentEl.textContent = '';
+    if (loadingEl) loadingEl.classList.add('hidden');
   }
 
   function renderNav() {
