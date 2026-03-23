@@ -177,22 +177,42 @@ const QuestionPanel = (() => {
 
     viewer.classList.remove('hidden');
     loadingEl.classList.remove('hidden');
+    frameEl.removeAttribute('src');
     frameEl.srcdoc = '<html><body style="font-family:sans-serif;padding:16px;">Loading document...</body></html>';
     titleEl.textContent = 'Loading...';
     urlEl.textContent = url;
 
-    const data = await invoke('fetch_allowed_doc_cmd', {
-      url,
-      allowedUrls: allowedUrls || [],
-    });
+    try {
+      const data = await invoke('fetch_allowed_doc_cmd', {
+        url,
+        allowedUrls: allowedUrls || [],
+      });
 
-    titleEl.textContent = data?.title || 'Documentation';
-    urlEl.textContent = data?.url || url;
+      titleEl.textContent = data?.title || 'Documentation';
+      urlEl.textContent = data?.url || url;
 
-    const html = String(data?.html || '').trim();
-    const safeBase = escapeHtmlAttr(data?.url || url);
-    frameEl.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${safeBase}"></head><body>${html}</body></html>`;
-    loadingEl.classList.add('hidden');
+      const html = String(data?.html || '').trim();
+      const safeBase = escapeHtmlAttr(data?.url || url);
+      frameEl.removeAttribute('src');
+      frameEl.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${safeBase}"></head><body>${html}</body></html>`;
+      loadingEl.classList.add('hidden');
+      return;
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      const canFallback = msg.includes('HTTP 403') || msg.includes('Failed to fetch URL');
+      if (!canFallback) {
+        loadingEl.classList.add('hidden');
+        throw err;
+      }
+
+      // Fallback for anti-bot/CSP sites: load directly in iframe after local allowlist gate.
+      titleEl.textContent = 'Direct View';
+      urlEl.textContent = url;
+      frameEl.srcdoc = '';
+      frameEl.src = url;
+      loadingEl.classList.add('hidden');
+      appendOutput('info', `Direct viewer fallback used for: ${url}`);
+    }
   }
 
   function closeDocViewer() {
@@ -200,7 +220,10 @@ const QuestionPanel = (() => {
     const frameEl = $('#doc-viewer-frame');
     const loadingEl = $('#doc-viewer-loading');
     if (viewer) viewer.classList.add('hidden');
-    if (frameEl) frameEl.srcdoc = '';
+    if (frameEl) {
+      frameEl.srcdoc = '';
+      frameEl.removeAttribute('src');
+    }
     if (loadingEl) loadingEl.classList.add('hidden');
   }
 

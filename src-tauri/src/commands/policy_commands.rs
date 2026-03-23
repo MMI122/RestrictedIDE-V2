@@ -63,7 +63,13 @@ pub fn fetch_allowed_doc_cmd(
 
     let final_url = response.url().to_string();
     if !url_matches_allowlist(&final_url, &allowed_urls) {
-        return Err("Redirected URL not in whitelist".into());
+        // Some docs pages redirect to canonical routes (e.g., trailing slash/version path)
+        // while staying on the same origin. Permit that only if the original URL was allowed.
+        let requested_allowed = url_matches_allowlist(normalized, &allowed_urls);
+        let origin_ok = same_origin(normalized, &final_url);
+        if !(requested_allowed && origin_ok) {
+            return Err("Redirected URL not in whitelist".into());
+        }
     }
 
     let status = response.status();
@@ -215,5 +221,55 @@ fn url_matches_allowlist(url: &str, allowed_urls: &[String]) -> bool {
 }
 
 fn normalize_url(url: &str) -> String {
-    url.trim().to_lowercase()
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // Preserve path/query case while normalizing scheme/host and stripping fragment.
+    if let Ok(mut parsed) = Url::parse(trimmed) {
+        parsed.set_fragment(None);
+
+        let scheme = parsed.scheme().to_lowercase();
+        let host = parsed.host_str().unwrap_or("").to_lowercase();
+        let port = parsed
+            .port()
+            .map(|p| format!(":{}", p))
+            .unwrap_or_default();
+
+        let mut path = parsed.path().to_string();
+        if path.is_empty() {
+            path = "/".to_string();
+        }
+        if path.len() > 1 {
+            path = path.trim_end_matches('/').to_string();
+            if path.is_empty() {
+                path = "/".to_string();
+            }
+        }
+
+        let query = parsed
+            .query()
+            .map(|q| format!("?{}", q))
+            .unwrap_or_default();
+
+        return format!("{}://{}{}{}{}", scheme, host, port, path, query);
+    }
+
+    trimmed.to_string()
+}
+
+fn same_origin(a: &str, b: &str) -> bool {
+    let ua = match Url::parse(a) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let ub = match Url::parse(b) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    ua.scheme().eq_ignore_ascii_case(ub.scheme())
+        && ua.host_str().map(|h| h.to_lowercase()) == ub.host_str().map(|h| h.to_lowercase())
+        && ua.port_or_known_default() == ub.port_or_known_default()
 }
