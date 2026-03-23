@@ -3,23 +3,19 @@ use walkdir::WalkDir;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::time::Duration;
+use url::Url;
 
 use crate::AppState;
 use crate::policy::engine::ValidationResult;
 
-static RE_SCRIPT_STYLE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>").unwrap()
-});
 static RE_TITLE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?is)<title[^>]*>(.*?)</title>").unwrap());
-static RE_TAGS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?is)<[^>]+>").unwrap());
-static RE_WS: Lazy<Regex> = Lazy::new(|| Regex::new(r"[ \t]+\n").unwrap());
 
 #[derive(serde::Serialize)]
 pub struct AllowedDocContent {
     pub url: String,
     pub title: String,
-    pub content: String,
+    pub html: String,
 }
 
 // ─── validate_url ───────────────────────────────────────────────────────────
@@ -33,19 +29,21 @@ pub fn validate_url(url: String, state: State<'_, AppState>) -> Result<Validatio
 #[tauri::command]
 pub fn fetch_allowed_doc_cmd(
     url: String,
-    state: State<'_, AppState>,
+    allowed_urls: Vec<String>,
+    _state: State<'_, AppState>,
 ) -> Result<AllowedDocContent, String> {
     let normalized = url.trim();
     if normalized.is_empty() {
         return Err("URL is required".into());
     }
 
-    {
-        let engine = state.policy_engine.lock().map_err(|e| e.to_string())?;
-        let r = engine.validate_url(normalized);
-        if !r.allowed {
-            return Err(r.reason.unwrap_or_else(|| "URL blocked by policy".into()));
-        }
+    let parsed = Url::parse(normalized).map_err(|_| "Invalid URL")?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("Only http/https URLs are allowed".into());
+    }
+
+    if !url_matches_allowlist(normalized, &allowed_urls) {
+        return Err("URL not in whitelist".into());
     }
 
     let client = reqwest::blocking::Client::builder()
@@ -63,21 +61,26 @@ pub fn fetch_allowed_doc_cmd(
         .send()
         .map_err(|e| format!("Failed to fetch URL: {}", e))?;
 
+    let final_url = response.url().to_string();
+    if !url_matches_allowlist(&final_url, &allowed_urls) {
+        return Err("Redirected URL not in whitelist".into());
+    }
+
     let status = response.status();
     if !status.is_success() {
         return Err(format!("Failed to fetch URL: HTTP {}", status.as_u16()));
     }
 
-    let body = response
+    let html = response
         .text()
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-    let (title, content) = extract_readable_text(&body);
+    let title = extract_title(&html);
 
     Ok(AllowedDocContent {
-        url: normalized.to_string(),
+        url: final_url,
         title,
-        content,
+        html,
     })
 }
 
@@ -179,27 +182,12 @@ fn is_text_extension(ext: &str) -> bool {
     )
 }
 
-fn extract_readable_text(html: &str) -> (String, String) {
-    let title = RE_TITLE
+fn extract_title(html: &str) -> String {
+    RE_TITLE
         .captures(html)
         .and_then(|c| c.get(1).map(|m| html_entity_decode(m.as_str().trim())))
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Documentation".to_string());
-
-    let without_script = RE_SCRIPT_STYLE.replace_all(html, " ");
-    let plain = RE_TAGS.replace_all(&without_script, " ");
-    let collapsed = RE_WS.replace_all(&plain, "\n");
-    let text = html_entity_decode(collapsed.trim());
-
-    let bounded = if text.chars().count() > 120_000 {
-        let mut s = text.chars().take(120_000).collect::<String>();
-        s.push_str("\n\n[Truncated by Restricted IDE]");
-        s
-    } else {
-        text
-    };
-
-    (title, bounded)
+        .unwrap_or_else(|| "Documentation".to_string())
 }
 
 fn html_entity_decode(s: &str) -> String {
@@ -209,4 +197,23 @@ fn html_entity_decode(s: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
+}
+
+fn url_matches_allowlist(url: &str, allowed_urls: &[String]) -> bool {
+    let candidate = normalize_url(url);
+    allowed_urls.iter().any(|entry| {
+        let pattern = normalize_url(entry);
+        if pattern.is_empty() {
+            return false;
+        }
+        if let Some(prefix) = pattern.strip_suffix('*') {
+            candidate.starts_with(prefix)
+        } else {
+            candidate == pattern
+        }
+    })
+}
+
+fn normalize_url(url: &str) -> String {
+    url.trim().to_lowercase()
 }

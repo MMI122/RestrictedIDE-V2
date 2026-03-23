@@ -3404,6 +3404,7 @@ dependencies = [
  "tauri-build",
  "tokio",
  "tower-http",
+ "url",
  "uuid",
  "walkdir",
  "windows 0.58.0",
