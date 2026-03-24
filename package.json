@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "exam-shell:enable": "powershell -ExecutionPolicy Bypass -File .\\scripts\\windows\\enable-exam-shell.ps1",
+    "exam-shell:disable": "powershell -ExecutionPolicy Bypass -File .\\scripts\\windows\\disable-exam-shell.ps1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

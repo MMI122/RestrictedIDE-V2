@@ -791,7 +791,7 @@ const JoinSession = (() => {
     // Activate kiosk lockdown on join (keyboard hooks, process monitoring, etc.)
     try {
       const sec = getSessionSecurity();
-      await invoke('set_kiosk_mode', {
+      const resp = await invoke('set_kiosk_mode', {
         enabled: true,
         policy: {
           security_mode: sec.security_mode || 'monitor',
@@ -799,10 +799,11 @@ const JoinSession = (() => {
           focus_watchdog: !!sec.focus_watchdog,
           controlled_paste: !!sec.controlled_paste,
         },
-      }).catch(e => {
-        console.warn('Kiosk activation warning:', e);
-        // Non-critical: don't block if kiosk command fails
       });
+
+      if (resp && resp.success === false) {
+        console.warn('Kiosk activation skipped:', resp.message || 'unknown reason');
+      }
     } catch (err) {
       console.error('Kiosk activation error:', err);
     }

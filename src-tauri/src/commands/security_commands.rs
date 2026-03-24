@@ -1,6 +1,7 @@
 //! Tauri IPC commands for Phase 2 security controls.
 
 use crate::AppState;
+use crate::commands::session_commands::{SessionRole, SessionState};
 use tauri::{Manager, State};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -78,10 +79,25 @@ pub struct SecurityStatus {
 pub fn set_kiosk_mode(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    session_state: State<'_, SessionState>,
     enabled: bool,
     policy: Option<KioskPolicyOverride>,
 ) -> serde_json::Value {
     log::info!("[Security] Kiosk mode requested: enabled={}", enabled);
+
+    if enabled {
+        let role = session_state.role.lock().unwrap().clone();
+        if role != SessionRole::Student {
+            log::warn!(
+                "[Security] Ignoring kiosk enable because current role is not student: {:?}",
+                role
+            );
+            return serde_json::json!({
+                "success": false,
+                "message": "Kiosk enable is allowed only for student role"
+            });
+        }
+    }
 
     let cfg = state.config.lock().unwrap().clone();
     let security_mode = policy
