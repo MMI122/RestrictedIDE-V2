@@ -19,6 +19,213 @@ const IDE = {
   outputVisible: true,
 };
 
+const TeacherMaterials = (() => {
+  let items = [];
+  let activeId = null;
+
+  function escapeForHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function isTextLikeFile(file) {
+    const name = (file?.name || '').toLowerCase();
+    const mime = (file?.type || '').toLowerCase();
+    if (mime.startsWith('text/')) return true;
+    const textExts = [
+      '.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.csv',
+      '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.h', '.hpp',
+      '.html', '.css', '.scss', '.sql', '.sh', '.ps1', '.rb', '.go', '.rs',
+    ];
+    return textExts.some((ext) => name.endsWith(ext));
+  }
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file as text'));
+      reader.readAsText(file);
+    });
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file as base64'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function parseMaterialPayload(rawContent) {
+    if (typeof rawContent !== 'string') return null;
+    let obj;
+    try {
+      obj = JSON.parse(rawContent);
+    } catch {
+      return null;
+    }
+    if (obj?.kind !== 'teacher_file') return null;
+    if (typeof obj.file_name !== 'string' || typeof obj.content !== 'string') return null;
+    return {
+      kind: 'teacher_file',
+      file_name: obj.file_name,
+      mime_type: typeof obj.mime_type === 'string' ? obj.mime_type : 'application/octet-stream',
+      size: Number(obj.size || 0),
+      encoding: obj.encoding === 'base64' ? 'base64' : 'text',
+      content: obj.content,
+    };
+  }
+
+  function b64ToUint8Array(base64) {
+    const binary = atob(base64);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      out[i] = binary.charCodeAt(i);
+    }
+    return out;
+  }
+
+  function toBlob(material) {
+    if (material.encoding === 'text') {
+      return new Blob([material.content], { type: material.mime_type || 'text/plain' });
+    }
+    return new Blob([b64ToUint8Array(material.content)], { type: material.mime_type || 'application/octet-stream' });
+  }
+
+  function humanSize(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function render() {
+    const listEl = $('#teacher-file-list');
+    const titleEl = $('#teacher-file-title');
+    const contentEl = $('#teacher-file-content');
+    const downloadBtn = $('#btn-download-teacher-file');
+    if (!listEl || !titleEl || !contentEl || !downloadBtn) return;
+
+    if (items.length === 0) {
+      listEl.innerHTML = '<div class="teacher-file-empty">No teacher-shared files yet.</div>';
+      titleEl.textContent = 'No file selected';
+      contentEl.value = '';
+      downloadBtn.disabled = true;
+      return;
+    }
+
+    const active = items.find((x) => x.id === activeId) || items[0];
+    activeId = active.id;
+
+    listEl.innerHTML = items.map((it) => {
+      const cls = it.id === activeId ? 'teacher-file-item active' : 'teacher-file-item';
+      return `<button class="${cls}" data-id="${it.id}"><span class="name">${escapeForHtml(it.file_name)}</span><span class="meta">${escapeForHtml(humanSize(it.size))}</span></button>`;
+    }).join('');
+
+    listEl.querySelectorAll('.teacher-file-item').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeId = btn.dataset.id || null;
+        render();
+      });
+    });
+
+    titleEl.textContent = `${active.file_name} (${humanSize(active.size)})`;
+    if (active.encoding === 'text') {
+      contentEl.value = active.content;
+    } else {
+      contentEl.value = 'Binary file received. Use Download to open it in an external app.';
+    }
+
+    downloadBtn.disabled = false;
+    downloadBtn.onclick = () => {
+      const blob = toBlob(active);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = active.file_name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    };
+  }
+
+  async function buildPayloadFromFile(file) {
+    const maxBytes = 768 * 1024;
+    if (!file) {
+      throw new Error('No file selected.');
+    }
+    if (file.size > maxBytes) {
+      throw new Error('File too large. Keep teacher-shared files under 768 KB.');
+    }
+
+    const textLike = isTextLikeFile(file);
+    let encoding = 'text';
+    let content = '';
+
+    if (textLike) {
+      content = await readFileAsText(file);
+      encoding = 'text';
+    } else {
+      const dataUrl = await readFileAsDataUrl(file);
+      const b64 = dataUrl.split(',')[1] || '';
+      content = b64;
+      encoding = 'base64';
+    }
+
+    const payload = {
+      kind: 'teacher_file',
+      file_name: file.name,
+      mime_type: file.type || 'application/octet-stream',
+      size: file.size,
+      encoding,
+      content,
+    };
+
+    return JSON.stringify(payload);
+  }
+
+  function ingestBroadcast(broadcast) {
+    const payload = parseMaterialPayload(broadcast?.content);
+    if (!payload) return false;
+
+    const existing = items.find((x) => x.id === broadcast.id);
+    if (existing) return true;
+
+    items.unshift({
+      id: broadcast.id,
+      file_name: payload.file_name,
+      mime_type: payload.mime_type,
+      size: payload.size,
+      encoding: payload.encoding,
+      content: payload.content,
+      created_at: broadcast.created_at || new Date().toISOString(),
+    });
+
+    if (!activeId) activeId = broadcast.id;
+    render();
+    return true;
+  }
+
+  function reset() {
+    items = [];
+    activeId = null;
+    render();
+  }
+
+  return {
+    buildPayloadFromFile,
+    ingestBroadcast,
+    reset,
+    render,
+  };
+})();
+
 /* ── DOM cache ────────────────────────────────────────────────────────── */
 
 const $ = (sel) => document.querySelector(sel);
@@ -36,6 +243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Set up activity bar
     setupActivityBar();
+    TeacherMaterials.render();
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', handleGlobalKeys);

@@ -29,6 +29,7 @@ const JoinSession = (() => {
       block_multi_monitor: true,
       prevent_screenshots: true,
       focus_watchdog: true,
+      controlled_paste: true,
     };
   }
 
@@ -367,7 +368,12 @@ const JoinSession = (() => {
 
       if (!seenBroadcastIds.has(b.id)) {
         seenBroadcastIds.add(b.id);
-        appendOutput('info', `📢 [Broadcast] ${b.content}`);
+        const isMaterial = TeacherMaterials.ingestBroadcast(b);
+        if (isMaterial) {
+          appendOutput('info', '📚 [Teacher File] New shared file received in Materials panel.');
+        } else {
+          appendOutput('info', `📢 [Broadcast] ${b.content}`);
+        }
 
         if (isRemote) {
           await fetch(`http://${Session.sessionData.server}/api/broadcast/${b.id}/delivered`, {
@@ -608,6 +614,7 @@ const JoinSession = (() => {
 
       // Store session data from join response
       seenBroadcastIds.clear();
+      TeacherMaterials.reset();
       Session.sessionData = {
         id: result.session_id,
         code: code,
@@ -622,6 +629,7 @@ const JoinSession = (() => {
           block_multi_monitor: result.options?.block_multi_monitor ?? true,
           prevent_screenshots: result.options?.prevent_screenshots ?? true,
           focus_watchdog: result.options?.focus_watchdog ?? true,
+          controlled_paste: result.options?.controlled_paste ?? true,
         },
         server: server,
         studentId: studentId,
@@ -739,6 +747,7 @@ const JoinSession = (() => {
         policy: {
           prevent_screenshots: !!sec.prevent_screenshots,
           focus_watchdog: !!sec.focus_watchdog,
+          controlled_paste: !!sec.controlled_paste,
         },
       }).catch(e => {
         console.warn('Kiosk activation warning:', e);

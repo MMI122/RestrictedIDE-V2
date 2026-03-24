@@ -136,6 +136,9 @@
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-focus-watch" checked /> Focus Watchdog</label>
           </div>
+          <div class="form-row checkbox-row">
+            <label><input type="checkbox" id="sec-controlled-paste" checked /> Controlled Pasting (allow clipboard copy/paste)</label>
+          </div>
           <div class="form-row">
             <label for="session-disconnect-grace">Disconnect Grace (seconds)</label>
             <input type="number" id="session-disconnect-grace" min="15" max="600" value="120" />
@@ -312,6 +315,9 @@
             <input type="text" id="broadcast-input" placeholder="Type a message to all participants..." />
             <button class="landing-btn primary" id="btn-send-broadcast" style="width:auto;padding:8px 16px;">Send</button>
             <button class="landing-btn outline" id="btn-send-selected" style="width:auto;padding:8px 16px;">Send to Selected</button>
+            <button class="landing-btn outline" id="btn-send-file-all" style="width:auto;padding:8px 16px;">Send File to All</button>
+            <button class="landing-btn outline" id="btn-send-file-selected" style="width:auto;padding:8px 16px;">Send File to Selected</button>
+            <input type="file" id="broadcast-file-input" class="hidden" />
           </div>
           <div class="broadcast-history-header">
             <span>History</span>
@@ -487,6 +493,7 @@
     <aside id="activity-bar">
       <button class="activity-btn active" data-panel="explorer"  title="Explorer">📁</button>
       <button class="activity-btn"        data-panel="search"    title="Search">🔍</button>
+      <button class="activity-btn"        data-panel="materials" title="Materials">📚</button>
       <button class="activity-btn"        data-panel="output"    title="Output">📟</button>
     </aside>
 
@@ -513,6 +520,19 @@
           <button id="btn-search">Go</button>
         </div>
         <div id="search-results" class="search-results"></div>
+      </div>
+
+      <!-- Teacher materials view -->
+      <div class="panel-view" id="panel-materials">
+        <div class="panel-header"><span>MATERIALS</span></div>
+        <div id="teacher-file-list" class="teacher-file-list"></div>
+        <div class="teacher-file-preview-wrap">
+          <div class="teacher-file-preview-head">
+            <span id="teacher-file-title">No file selected</span>
+            <button id="btn-download-teacher-file" class="mini-btn" disabled>Download</button>
+          </div>
+          <textarea id="teacher-file-content" class="teacher-file-content" readonly placeholder="Teacher-shared file content will appear here for copy/paste..."></textarea>
+        </div>
       </div>
 
       <!-- Output (mini) view -->

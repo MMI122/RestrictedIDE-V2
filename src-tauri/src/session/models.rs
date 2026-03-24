@@ -49,6 +49,8 @@ pub struct SessionOptions {
     pub prevent_screenshots: bool,
     #[serde(default = "default_true")]
     pub focus_watchdog: bool,
+    #[serde(default = "default_true")]
+    pub controlled_paste: bool,
     #[serde(default = "default_disconnect_grace_seconds")]
     pub disconnect_grace_seconds: u32,
 }
@@ -72,6 +74,7 @@ impl Default for SessionOptions {
             block_multi_monitor: true,
             prevent_screenshots: true,
             focus_watchdog: true,
+            controlled_paste: true,
             disconnect_grace_seconds: default_disconnect_grace_seconds(),
         }
     }

@@ -7,6 +7,7 @@ use tauri::State;
 pub struct KioskPolicyOverride {
     pub prevent_screenshots: Option<bool>,
     pub focus_watchdog: Option<bool>,
+    pub controlled_paste: Option<bool>,
 }
 
 /// Run VM detection and return the result.
@@ -90,6 +91,10 @@ pub fn set_kiosk_mode(
         .as_ref()
         .and_then(|p| p.focus_watchdog)
         .unwrap_or(cfg.security.focus_watchdog);
+    let effective_controlled_paste = policy
+        .as_ref()
+        .and_then(|p| p.controlled_paste)
+        .unwrap_or(true);
 
     #[cfg(target_os = "windows")]
     {
@@ -101,7 +106,13 @@ pub fn set_kiosk_mode(
                 cfg.process_control.blacklist.clone(),
                 cfg.process_control.monitor_interval_ms,
             );
-            crate::security::clipboard_guard::start_clipboard_guard();
+
+            if !effective_controlled_paste {
+                crate::security::clipboard_guard::start_clipboard_guard();
+            } else {
+                crate::security::clipboard_guard::stop_clipboard_guard();
+                crate::security::clipboard_guard::clear_clipboard_once();
+            }
 
             if cfg.input_control.mouse_confinement {
                 crate::security::mouse_confinement::confine_cursor_to_foreground();

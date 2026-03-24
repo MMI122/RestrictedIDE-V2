@@ -18,6 +18,10 @@ fn clear_clipboard() {
     }
 }
 
+pub fn clear_clipboard_once() {
+    clear_clipboard();
+}
+
 /// Spawn a background thread that wipes the clipboard every few seconds.
 pub fn start_clipboard_guard() {
     if CLIPBOARD_GUARD_RUNNING.swap(true, Ordering::SeqCst) {

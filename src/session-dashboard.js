@@ -8,6 +8,7 @@ const Dashboard = (() => {
   let pollTimer = null;
   let sessionActive = false;
   let selectedStudentId = null;
+  let pendingFileTargetMode = 'all';
   let latestParticipants = [];
   let latestSubmissions = [];
   let latestViolations = [];
@@ -19,6 +20,9 @@ const Dashboard = (() => {
     $('#btn-end-session')?.addEventListener('click', handleEndSession);
     $('#btn-send-broadcast')?.addEventListener('click', () => handleBroadcast('all'));
     $('#btn-send-selected')?.addEventListener('click', () => handleBroadcast('selected'));
+    $('#btn-send-file-all')?.addEventListener('click', () => handleSendFileClick('all'));
+    $('#btn-send-file-selected')?.addEventListener('click', () => handleSendFileClick('selected'));
+    $('#broadcast-file-input')?.addEventListener('change', handleFileSelected);
     $('#btn-review-submissions')?.addEventListener('click', handleReviewSubmissions);
 
     // Broadcast on Enter key
@@ -393,6 +397,53 @@ const Dashboard = (() => {
     }
   }
 
+  function handleSendFileClick(mode) {
+    if (mode === 'selected' && !selectedStudentId) {
+      alert('Select a participant first, then use Send File to Selected.');
+      return;
+    }
+
+    pendingFileTargetMode = mode === 'selected' ? 'selected' : 'all';
+    const picker = $('#broadcast-file-input');
+    if (!picker) return;
+    picker.value = '';
+    picker.click();
+  }
+
+  async function handleFileSelected(e) {
+    const picker = e.target;
+    const file = picker?.files?.[0];
+    if (!file || !Session.sessionData) return;
+
+    try {
+      const content = await TeacherMaterials.buildPayloadFromFile(file);
+      const sendSelectedOnly = pendingFileTargetMode === 'selected';
+      const targetType = sendSelectedOnly ? 'specific' : 'all';
+      const targetIds = sendSelectedOnly ? [selectedStudentId] : null;
+
+      await invoke('broadcast_message_cmd', {
+        sessionId: Session.sessionData.id,
+        content,
+        targetType,
+        targetIds,
+      });
+
+      await refreshDashboardData(Session.sessionData.id);
+      appendOutput(
+        'info',
+        sendSelectedOnly
+          ? `📚 [File -> ${selectedStudentId}] ${file.name}`
+          : `📚 [File -> All] ${file.name}`
+      );
+    } catch (err) {
+      console.error('Send file error:', err);
+      alert('Failed to send file: ' + (err.message || err));
+    } finally {
+      if (picker) picker.value = '';
+      pendingFileTargetMode = 'all';
+    }
+  }
+
   function renderBroadcastHistory() {
     const listEl = $('#broadcast-history-list');
     const countEl = $('#dash-broadcast-count');
@@ -406,12 +457,16 @@ const Dashboard = (() => {
     }
 
     listEl.innerHTML = latestBroadcasts.map(item => {
+      const filePayload = parseTeacherFilePayload(item.content);
       const states = getRecipientStates(item);
       const summary = summarizeRecipientStates(states);
       const chips = states.slice(0, 6).map(s => `
         <span class="recipient-chip ${s.stateClass}">${escapeHtml(s.studentId)}: ${s.stateLabel}</span>
       `).join('');
       const more = states.length > 6 ? `<span class="recipient-chip more">+${states.length - 6} more</span>` : '';
+      const contentHtml = filePayload
+        ? `<div class="broadcast-file-chip">📎 ${escapeHtml(filePayload.file_name)} (${humanFileSize(filePayload.size)})</div>`
+        : `<div class="broadcast-history-content">${escapeHtml(item.content)}</div>`;
 
       return `
         <div class="broadcast-history-item">
@@ -419,11 +474,32 @@ const Dashboard = (() => {
             <span class="broadcast-time">${formatTime(item.created_at)}</span>
             <span class="broadcast-summary">${summary}</span>
           </div>
-          <div class="broadcast-history-content">${escapeHtml(item.content)}</div>
+          ${contentHtml}
           <div class="broadcast-recipient-chips">${chips}${more}</div>
         </div>
       `;
     }).join('');
+  }
+
+  function parseTeacherFilePayload(content) {
+    try {
+      const obj = JSON.parse(String(content || ''));
+      if (obj?.kind !== 'teacher_file') return null;
+      return {
+        file_name: String(obj.file_name || 'shared-file'),
+        size: Number(obj.size || 0),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function humanFileSize(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function getRecipientStates(item) {

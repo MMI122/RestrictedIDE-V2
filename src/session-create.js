@@ -214,6 +214,7 @@ const CreateSession = (() => {
       block_multi_monitor: $('#sec-multi-monitor')?.checked ?? true,
       prevent_screenshots: $('#sec-screenshot')?.checked ?? true,
       focus_watchdog: $('#sec-focus-watch')?.checked ?? true,
+      controlled_paste: $('#sec-controlled-paste')?.checked ?? true,
     };
 
     const btn = $('#btn-create-session');
@@ -250,6 +251,7 @@ const CreateSession = (() => {
           block_multi_monitor: security.block_multi_monitor,
           prevent_screenshots: security.prevent_screenshots,
           focus_watchdog: security.focus_watchdog,
+          controlled_paste: security.controlled_paste,
           disconnect_grace_seconds: Math.max(15, Math.min(600, disconnectGraceSeconds)),
         },
       });
