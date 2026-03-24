@@ -3,6 +3,12 @@
 use crate::AppState;
 use tauri::State;
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct KioskPolicyOverride {
+    pub prevent_screenshots: Option<bool>,
+    pub focus_watchdog: Option<bool>,
+}
+
 /// Run VM detection and return the result.
 #[tauri::command]
 pub fn check_vm() -> crate::security::vm_detection::VmCheckResult {
@@ -71,10 +77,19 @@ pub fn set_kiosk_mode(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
+    policy: Option<KioskPolicyOverride>,
 ) -> serde_json::Value {
     log::info!("[Security] Kiosk mode requested: enabled={}", enabled);
 
     let cfg = state.config.lock().unwrap().clone();
+    let effective_prevent_screenshots = policy
+        .as_ref()
+        .and_then(|p| p.prevent_screenshots)
+        .unwrap_or(cfg.security.screenshot_prevention);
+    let effective_focus_watchdog = policy
+        .as_ref()
+        .and_then(|p| p.focus_watchdog)
+        .unwrap_or(cfg.security.focus_watchdog);
 
     #[cfg(target_os = "windows")]
     {
@@ -92,11 +107,11 @@ pub fn set_kiosk_mode(
                 crate::security::mouse_confinement::confine_cursor_to_foreground();
             }
 
-            if cfg.security.screenshot_prevention {
+            if effective_prevent_screenshots {
                 crate::security::screenshot_guard::enable_screenshot_prevention(None);
             }
 
-            if cfg.security.focus_watchdog {
+            if effective_focus_watchdog {
                 crate::security::focus_watchdog::start_focus_watchdog(
                     app.clone(),
                     cfg.security.focus_poll_ms,

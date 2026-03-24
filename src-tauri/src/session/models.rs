@@ -41,12 +41,24 @@ pub struct SessionOptions {
     pub audio: bool,
     pub screen_share: bool,
     pub recording: bool,
+    #[serde(default = "default_true")]
+    pub block_vm: bool,
+    #[serde(default = "default_true")]
+    pub block_multi_monitor: bool,
+    #[serde(default = "default_true")]
+    pub prevent_screenshots: bool,
+    #[serde(default = "default_true")]
+    pub focus_watchdog: bool,
     #[serde(default = "default_disconnect_grace_seconds")]
     pub disconnect_grace_seconds: u32,
 }
 
 fn default_disconnect_grace_seconds() -> u32 {
     120
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SessionOptions {
@@ -56,6 +68,10 @@ impl Default for SessionOptions {
             audio: false,
             screen_share: false,
             recording: false,
+            block_vm: true,
+            block_multi_monitor: true,
+            prevent_screenshots: true,
+            focus_watchdog: true,
             disconnect_grace_seconds: default_disconnect_grace_seconds(),
         }
     }

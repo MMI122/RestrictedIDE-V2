@@ -246,6 +246,10 @@ const CreateSession = (() => {
           audio: false,
           screen_share: false,
           recording: false,
+          block_vm: security.block_vm,
+          block_multi_monitor: security.block_multi_monitor,
+          prevent_screenshots: security.prevent_screenshots,
+          focus_watchdog: security.focus_watchdog,
           disconnect_grace_seconds: Math.max(15, Math.min(600, disconnectGraceSeconds)),
         },
       });

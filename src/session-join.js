@@ -23,6 +23,15 @@ const JoinSession = (() => {
     return Math.max(15, Math.min(600, Math.floor(v)));
   }
 
+  function getSessionSecurity() {
+    return Session.sessionData?.security || {
+      block_vm: true,
+      block_multi_monitor: true,
+      prevent_screenshots: true,
+      focus_watchdog: true,
+    };
+  }
+
   function isRemovedError(err) {
     const msg = String(err?.message || err || '').toLowerCase();
     return msg.includes('removed') || msg.includes('kicked') || msg.includes('forbidden');
@@ -501,27 +510,33 @@ const JoinSession = (() => {
   async function runSecurityChecks() {
     // Run pre-join security checks (VM, multi-monitor)
     try {
-      // Run native checks on the student's own device
-      const vmCheckResult = await invoke('check_vm').catch(e => {
-        console.warn('VM check unavailable:', e);
-        return { vm_detected: false };
-      });
+      const sec = getSessionSecurity();
 
-      if (vmCheckResult.is_vm) {
-        const msg = 'VM detected: This application cannot run in a virtual machine.';
-        showError(msg);
-        return false;
+      // Run native checks on the student's own device
+      if (sec.block_vm) {
+        const vmCheckResult = await invoke('check_vm').catch(e => {
+          console.warn('VM check unavailable:', e);
+          return { vm_detected: false };
+        });
+
+        if (vmCheckResult.is_vm) {
+          const msg = 'VM detected: This session blocks virtual machines.';
+          showError(msg);
+          return false;
+        }
       }
 
-      const monitorCheckResult = await invoke('check_monitors').catch(e => {
-        console.warn('Monitor check unavailable:', e);
-        return { multi_monitor: false };
-      });
+      if (sec.block_multi_monitor) {
+        const monitorCheckResult = await invoke('check_monitors').catch(e => {
+          console.warn('Monitor check unavailable:', e);
+          return { multi_monitor: false };
+        });
 
-      if ((monitorCheckResult.count || 0) > 1) {
-        const msg = 'Multiple monitors detected: Exams must be conducted on a single monitor.';
-        showError(msg);
-        return false;
+        if ((monitorCheckResult.count || 0) > 1) {
+          const msg = 'Multiple monitors detected: This session requires a single monitor.';
+          showError(msg);
+          return false;
+        }
       }
 
       return true; // All checks passed
@@ -602,6 +617,12 @@ const JoinSession = (() => {
         questions: result.questions || [],
         allowedUrls: result.allowed_urls || [],
         disconnectGraceSeconds: result.options?.disconnect_grace_seconds || DEFAULT_DISCONNECT_GRACE_SECONDS,
+        security: {
+          block_vm: result.options?.block_vm ?? true,
+          block_multi_monitor: result.options?.block_multi_monitor ?? true,
+          prevent_screenshots: result.options?.prevent_screenshots ?? true,
+          focus_watchdog: result.options?.focus_watchdog ?? true,
+        },
         server: server,
         studentId: studentId,
         displayName: displayName,
@@ -712,7 +733,14 @@ const JoinSession = (() => {
   async function activateKioskMode() {
     // Activate kiosk lockdown on join (keyboard hooks, process monitoring, etc.)
     try {
-      await invoke('set_kiosk_mode', { enabled: true }).catch(e => {
+      const sec = getSessionSecurity();
+      await invoke('set_kiosk_mode', {
+        enabled: true,
+        policy: {
+          prevent_screenshots: !!sec.prevent_screenshots,
+          focus_watchdog: !!sec.focus_watchdog,
+        },
+      }).catch(e => {
         console.warn('Kiosk activation warning:', e);
         // Non-critical: don't block if kiosk command fails
       });
