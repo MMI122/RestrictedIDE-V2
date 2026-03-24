@@ -343,6 +343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Output panel resize
     setupOutputResize();
+    setupSidebarResize();
 
     // Status
     setStatus('Ready');
@@ -475,6 +476,50 @@ function setupOutputResize() {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+/* ── Sidebar drag-to-resize ───────────────────────────────────────────── */
+
+function setupSidebarResize() {
+  const handle = $('#side-resize-handle');
+  const sidePanel = $('#side-panel');
+  const wrapper = $('#main-wrapper');
+  if (!handle || !sidePanel || !wrapper) return;
+
+  const saved = Number(localStorage.getItem('restrictedide.sidebarWidth'));
+  if (Number.isFinite(saved) && saved >= 180 && saved <= 700) {
+    sidePanel.style.width = `${saved}px`;
+  }
+
+  let startX = 0;
+  let startW = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = sidePanel.getBoundingClientRect().width;
+    handle.classList.add('active');
+    document.body.style.cursor = 'ew-resize';
+
+    const onMove = (ev) => {
+      const delta = ev.clientX - startX;
+      const maxAllowed = Math.min(700, wrapper.getBoundingClientRect().width * 0.6);
+      const newW = Math.max(180, Math.min(maxAllowed, startW + delta));
+      sidePanel.style.width = `${Math.floor(newW)}px`;
+    };
+
+    const onUp = () => {
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      const finalW = Math.floor(sidePanel.getBoundingClientRect().width);
+      localStorage.setItem('restrictedide.sidebarWidth', String(finalW));
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });

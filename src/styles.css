@@ -144,12 +144,27 @@ button {
 
 #side-panel {
   width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
+  min-width: 180px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+#side-resize-handle {
+  width: 6px;
+  cursor: ew-resize;
+  background: transparent;
+  border-right: 1px solid var(--border);
+  border-left: 1px solid transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+#side-resize-handle:hover,
+#side-resize-handle.active {
+  background: rgba(0, 120, 212, 0.35);
 }
 
 .panel-view { display: none; flex-direction: column; flex: 1; overflow: hidden; }
