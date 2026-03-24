@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::{Cursor, Read};
 use std::sync::Arc;
 use tauri::State;
 
@@ -411,4 +412,48 @@ pub async fn get_current_role_cmd(
     session_state: State<'_, SessionState>,
 ) -> Result<SessionRole, String> {
     Ok(session_state.role.lock().unwrap().clone())
+}
+
+#[tauri::command]
+pub async fn extract_docx_text_cmd(docx_bytes: Vec<u8>) -> Result<String, String> {
+    if docx_bytes.is_empty() {
+        return Err("Empty DOCX payload".to_string());
+    }
+
+    let cursor = Cursor::new(docx_bytes);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| format!("Invalid DOCX archive: {}", e))?;
+
+    let mut xml = String::new();
+    {
+        let mut file = archive
+            .by_name("word/document.xml")
+            .map_err(|e| format!("DOCX missing word/document.xml: {}", e))?;
+        file.read_to_string(&mut xml)
+            .map_err(|e| format!("Failed reading DOCX xml: {}", e))?;
+    }
+
+    let xml = xml
+        .replace("</w:p>", "\n")
+        .replace("</w:tr>", "\n")
+        .replace("<w:tab/>", "\t")
+        .replace("<w:br/>", "\n")
+        .replace("<w:cr/>", "\n");
+
+    let tag_re = regex::Regex::new(r"<[^>]+>")
+        .map_err(|e| format!("Regex error: {}", e))?;
+    let mut plain = tag_re.replace_all(&xml, "").to_string();
+
+    plain = plain
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'");
+
+    let blank_line_re = regex::Regex::new(r"\n{3,}")
+        .map_err(|e| format!("Regex error: {}", e))?;
+    plain = blank_line_re.replace_all(plain.trim(), "\n\n").to_string();
+
+    Ok(plain)
 }

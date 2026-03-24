@@ -22,6 +22,7 @@ const IDE = {
 const TeacherMaterials = (() => {
   let items = [];
   let activeId = null;
+  let activeObjectUrl = null;
 
   function escapeForHtml(str) {
     return String(str)
@@ -98,6 +99,53 @@ const TeacherMaterials = (() => {
     return new Blob([b64ToUint8Array(material.content)], { type: material.mime_type || 'application/octet-stream' });
   }
 
+  function currentSecurityMode() {
+    return String(Session?.sessionData?.security?.security_mode || 'monitor').toLowerCase();
+  }
+
+  function isStrictOrUltra() {
+    const mode = currentSecurityMode();
+    return mode === 'strict' || mode === 'ultra';
+  }
+
+  function clearObjectUrl() {
+    if (activeObjectUrl) {
+      URL.revokeObjectURL(activeObjectUrl);
+      activeObjectUrl = null;
+    }
+  }
+
+  function clearPreviewViews() {
+    const textEl = $('#teacher-file-content');
+    const pdfEl = $('#teacher-file-pdf');
+    const docxEl = $('#teacher-file-docx');
+    if (textEl) textEl.classList.add('hidden');
+    if (pdfEl) {
+      pdfEl.classList.add('hidden');
+      pdfEl.src = 'about:blank';
+    }
+    if (docxEl) {
+      docxEl.classList.add('hidden');
+      docxEl.textContent = '';
+    }
+    clearObjectUrl();
+  }
+
+  function isDocxFilename(name) {
+    return String(name || '').toLowerCase().endsWith('.docx');
+  }
+
+  async function renderDocxMaterial(active, docxEl) {
+    if (active.encoding !== 'base64') {
+      docxEl.textContent = 'Invalid DOCX payload.';
+      return;
+    }
+
+    const bytes = Array.from(b64ToUint8Array(active.content));
+    const text = await invoke('extract_docx_text_cmd', { docxBytes: bytes });
+    docxEl.textContent = text || '[DOCX has no readable text content]';
+  }
+
   function humanSize(bytes) {
     const n = Number(bytes || 0);
     if (!Number.isFinite(n) || n <= 0) return '0 B';
@@ -106,17 +154,19 @@ const TeacherMaterials = (() => {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function render() {
+  async function render() {
     const listEl = $('#teacher-file-list');
     const titleEl = $('#teacher-file-title');
     const contentEl = $('#teacher-file-content');
+    const pdfEl = $('#teacher-file-pdf');
+    const docxEl = $('#teacher-file-docx');
     const downloadBtn = $('#btn-download-teacher-file');
-    if (!listEl || !titleEl || !contentEl || !downloadBtn) return;
+    if (!listEl || !titleEl || !contentEl || !pdfEl || !docxEl || !downloadBtn) return;
 
     if (items.length === 0) {
       listEl.innerHTML = '<div class="teacher-file-empty">No teacher-shared files yet.</div>';
       titleEl.textContent = 'No file selected';
-      contentEl.value = '';
+      clearPreviewViews();
       downloadBtn.disabled = true;
       return;
     }
@@ -132,19 +182,20 @@ const TeacherMaterials = (() => {
     listEl.querySelectorAll('.teacher-file-item').forEach((btn) => {
       btn.addEventListener('click', () => {
         activeId = btn.dataset.id || null;
-        render();
+        render().catch((e) => console.warn('Material render failed:', e));
       });
     });
 
     titleEl.textContent = `${active.file_name} (${humanSize(active.size)})`;
-    if (active.encoding === 'text') {
-      contentEl.value = active.content;
-    } else {
-      contentEl.value = 'Binary file received. Use Download to open it in an external app.';
-    }
+    clearPreviewViews();
 
-    downloadBtn.disabled = false;
+    const strictExam = isStrictOrUltra();
+    downloadBtn.disabled = strictExam;
+    downloadBtn.title = strictExam
+      ? 'Download is disabled in strict exam modes.'
+      : '';
     downloadBtn.onclick = () => {
+      if (strictExam) return;
       const blob = toBlob(active);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -153,6 +204,41 @@ const TeacherMaterials = (() => {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 3000);
     };
+
+    const mime = String(active.mime_type || '').toLowerCase();
+    const isPdf = mime.includes('pdf') || String(active.file_name || '').toLowerCase().endsWith('.pdf');
+    const isDocx = mime.includes('officedocument.wordprocessingml.document') || isDocxFilename(active.file_name);
+
+    if (active.encoding === 'text') {
+      contentEl.classList.remove('hidden');
+      contentEl.value = active.content;
+      return;
+    }
+
+    if (isPdf) {
+      const blob = toBlob(active);
+      activeObjectUrl = URL.createObjectURL(blob);
+      pdfEl.src = activeObjectUrl;
+      pdfEl.classList.remove('hidden');
+      return;
+    }
+
+    if (isDocx) {
+      docxEl.classList.remove('hidden');
+      docxEl.textContent = 'Parsing DOCX...';
+      try {
+        await renderDocxMaterial(active, docxEl);
+      } catch (err) {
+        docxEl.textContent = 'Failed to parse DOCX in-app.';
+        console.warn('DOCX render failed:', err);
+      }
+      return;
+    }
+
+    docxEl.classList.remove('hidden');
+    docxEl.textContent = strictExam
+      ? 'This binary format is blocked in strict exam modes. Ask teacher to share PDF, DOCX, or text/code format.'
+      : 'Unsupported inline preview for this binary format. Download is available in monitor mode only.';
   }
 
   async function buildPayloadFromFile(file) {
@@ -208,14 +294,15 @@ const TeacherMaterials = (() => {
     });
 
     if (!activeId) activeId = broadcast.id;
-    render();
+    render().catch((e) => console.warn('Material render failed:', e));
     return true;
   }
 
   function reset() {
     items = [];
     activeId = null;
-    render();
+    clearObjectUrl();
+    render().catch((e) => console.warn('Material render failed:', e));
   }
 
   return {
@@ -243,7 +330,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Set up activity bar
     setupActivityBar();
-    TeacherMaterials.render();
+    TeacherMaterials.render().catch((e) => console.warn('Material render failed:', e));
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', handleGlobalKeys);

@@ -343,6 +343,29 @@ button {
   -webkit-user-select: text;
 }
 
+.teacher-file-pdf {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: none;
+  background: #111;
+}
+
+.teacher-file-docx {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 12px;
+  overflow: auto;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* ═══════ EDITOR AREA ═══════ */
 
 #editor-area {
