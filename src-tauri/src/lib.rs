@@ -125,6 +125,7 @@ pub fn run() {
             commands::session_commands::report_violation_cmd,
             commands::session_commands::stop_lan_server_cmd,
             commands::session_commands::get_current_role_cmd,
+            commands::session_commands::set_runtime_role_cmd,
             commands::session_commands::extract_docx_text_cmd,
             // Post-session
             commands::post_session_commands::judge_submissions_cmd,

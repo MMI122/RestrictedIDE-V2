@@ -415,6 +415,23 @@ pub async fn get_current_role_cmd(
 }
 
 #[tauri::command]
+pub async fn set_runtime_role_cmd(
+    session_state: State<'_, SessionState>,
+    role: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let parsed = match role.to_lowercase().as_str() {
+        "admin" => SessionRole::Admin,
+        "student" => SessionRole::Student,
+        _ => SessionRole::None,
+    };
+
+    *session_state.role.lock().unwrap() = parsed;
+    *session_state.current_session_id.lock().unwrap() = session_id;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn extract_docx_text_cmd(docx_bytes: Vec<u8>) -> Result<String, String> {
     if docx_bytes.is_empty() {
         return Err("Empty DOCX payload".to_string());

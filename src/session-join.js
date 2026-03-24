@@ -685,6 +685,12 @@ const JoinSession = (() => {
         language: null,
       };
       Session.role = 'student';
+      await invoke('set_runtime_role_cmd', {
+        role: 'student',
+        sessionId: result.session_id,
+      }).catch((e) => {
+        console.warn('Failed to sync runtime role to backend:', e);
+      });
       studentSessionStarted = false;
       adminEndHandled = false;
       focusEnforcementTriggered = false;
