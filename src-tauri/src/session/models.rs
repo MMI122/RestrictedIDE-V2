@@ -41,6 +41,8 @@ pub struct SessionOptions {
     pub audio: bool,
     pub screen_share: bool,
     pub recording: bool,
+    #[serde(default = "default_security_mode")]
+    pub security_mode: String,
     #[serde(default = "default_true")]
     pub block_vm: bool,
     #[serde(default = "default_true")]
@@ -51,6 +53,8 @@ pub struct SessionOptions {
     pub focus_watchdog: bool,
     #[serde(default = "default_true")]
     pub controlled_paste: bool,
+    #[serde(default = "default_focus_auto_submit_threshold")]
+    pub focus_auto_submit_threshold: u32,
     #[serde(default = "default_disconnect_grace_seconds")]
     pub disconnect_grace_seconds: u32,
 }
@@ -63,6 +67,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_security_mode() -> String {
+    "monitor".to_string()
+}
+
+fn default_focus_auto_submit_threshold() -> u32 {
+    3
+}
+
 impl Default for SessionOptions {
     fn default() -> Self {
         Self {
@@ -70,11 +82,13 @@ impl Default for SessionOptions {
             audio: false,
             screen_share: false,
             recording: false,
+            security_mode: default_security_mode(),
             block_vm: true,
             block_multi_monitor: true,
             prevent_screenshots: true,
             focus_watchdog: true,
             controlled_paste: true,
+            focus_auto_submit_threshold: default_focus_auto_submit_threshold(),
             disconnect_grace_seconds: default_disconnect_grace_seconds(),
         }
     }

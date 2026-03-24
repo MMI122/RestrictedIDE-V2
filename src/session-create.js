@@ -199,6 +199,7 @@ const CreateSession = (() => {
     const mode = $('#session-mode')?.value;
     const port = parseInt($('#session-port')?.value, 10) || 9876;
     const disconnectGraceSeconds = parseInt($('#session-disconnect-grace')?.value, 10) || 120;
+    const focusThreshold = parseInt($('#sec-focus-threshold')?.value, 10) || 3;
 
     if (!name) return;
 
@@ -210,11 +211,13 @@ const CreateSession = (() => {
 
     // Collect security settings
     const security = {
+      security_mode: $('#sec-policy-mode')?.value || 'strict',
       block_vm: $('#sec-vm-check')?.checked ?? true,
       block_multi_monitor: $('#sec-multi-monitor')?.checked ?? true,
       prevent_screenshots: $('#sec-screenshot')?.checked ?? true,
       focus_watchdog: $('#sec-focus-watch')?.checked ?? true,
       controlled_paste: $('#sec-controlled-paste')?.checked ?? true,
+      focus_auto_submit_threshold: Math.max(1, Math.min(10, focusThreshold)),
     };
 
     const btn = $('#btn-create-session');
@@ -247,11 +250,13 @@ const CreateSession = (() => {
           audio: false,
           screen_share: false,
           recording: false,
+          security_mode: security.security_mode,
           block_vm: security.block_vm,
           block_multi_monitor: security.block_multi_monitor,
           prevent_screenshots: security.prevent_screenshots,
           focus_watchdog: security.focus_watchdog,
           controlled_paste: security.controlled_paste,
+          focus_auto_submit_threshold: security.focus_auto_submit_threshold,
           disconnect_grace_seconds: Math.max(15, Math.min(600, disconnectGraceSeconds)),
         },
       });

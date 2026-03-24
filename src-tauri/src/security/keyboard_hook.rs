@@ -51,6 +51,7 @@ fn vk_name(vk: u32) -> Option<&'static str> {
         VK_TAB => Some("tab"),
         VK_ESCAPE => Some("escape"),
         VK_DELETE => Some("delete"),
+        VK_INSERT => Some("insert"),
         VK_F1 => Some("f1"),
         VK_F2 => Some("f2"),
         VK_F3 => Some("f3"),

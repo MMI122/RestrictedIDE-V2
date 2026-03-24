@@ -299,6 +299,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               console.warn('Failed to report focus violation:', e);
             });
           }
+
+          if (typeof JoinSession?.handleFocusSecurityEvent === 'function') {
+            JoinSession.handleFocusSecurityEvent(consecutive_losses).catch((e) => {
+              console.warn('Focus enforcement handler failed:', e);
+            });
+          }
         }
       } else {
         setStatus('Focus regained');

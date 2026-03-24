@@ -16,6 +16,7 @@ const JoinSession = (() => {
   let waitForStartInterval = null;
   let studentSessionStarted = false;
   let adminEndHandled = false;
+  let focusEnforcementTriggered = false;
 
   function getDisconnectGraceSeconds() {
     const v = Number(Session.sessionData?.disconnectGraceSeconds);
@@ -25,12 +26,57 @@ const JoinSession = (() => {
 
   function getSessionSecurity() {
     return Session.sessionData?.security || {
+      security_mode: 'monitor',
       block_vm: true,
       block_multi_monitor: true,
       prevent_screenshots: true,
       focus_watchdog: true,
       controlled_paste: true,
+      focus_auto_submit_threshold: 3,
     };
+  }
+
+  function normalizeSecurityMode(mode) {
+    const m = String(mode || 'monitor').toLowerCase();
+    if (m === 'ultra') return 'ultra';
+    if (m === 'strict') return 'strict';
+    return 'monitor';
+  }
+
+  function getFocusThreshold() {
+    const sec = getSessionSecurity();
+    const raw = Number(sec.focus_auto_submit_threshold);
+    if (!Number.isFinite(raw)) return 3;
+    return Math.max(1, Math.min(10, Math.floor(raw)));
+  }
+
+  async function handleFocusSecurityEvent(consecutiveLosses) {
+    if (focusEnforcementTriggered) return;
+
+    const sec = getSessionSecurity();
+    const mode = normalizeSecurityMode(sec.security_mode);
+    if (mode === 'monitor') return;
+
+    const threshold = mode === 'ultra' ? 1 : getFocusThreshold();
+    if (consecutiveLosses < threshold) return;
+
+    focusEnforcementTriggered = true;
+    appendOutput('error', mode === 'ultra'
+      ? '⛔ Ultra strict: focus loss detected. Auto-submitting immediately.'
+      : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
+
+    try {
+      await invoke('set_kiosk_mode', { enabled: false });
+    } catch (e) {
+      console.warn('Kiosk disable warning before strict auto-submit:', e);
+    }
+
+    try {
+      await SubmitFlow.autoSubmit();
+    } catch (err) {
+      console.error('Focus policy auto-submit failed:', err);
+      focusEnforcementTriggered = false;
+    }
   }
 
   function isRemovedError(err) {
@@ -625,11 +671,13 @@ const JoinSession = (() => {
         allowedUrls: result.allowed_urls || [],
         disconnectGraceSeconds: result.options?.disconnect_grace_seconds || DEFAULT_DISCONNECT_GRACE_SECONDS,
         security: {
+          security_mode: result.options?.security_mode || 'monitor',
           block_vm: result.options?.block_vm ?? true,
           block_multi_monitor: result.options?.block_multi_monitor ?? true,
           prevent_screenshots: result.options?.prevent_screenshots ?? true,
           focus_watchdog: result.options?.focus_watchdog ?? true,
           controlled_paste: result.options?.controlled_paste ?? true,
+          focus_auto_submit_threshold: result.options?.focus_auto_submit_threshold ?? 3,
         },
         server: server,
         studentId: studentId,
@@ -639,6 +687,7 @@ const JoinSession = (() => {
       Session.role = 'student';
       studentSessionStarted = false;
       adminEndHandled = false;
+      focusEnforcementTriggered = false;
       stopWaitForStart();
 
       showStatus('Preparing clean workspace...');
@@ -745,6 +794,7 @@ const JoinSession = (() => {
       await invoke('set_kiosk_mode', {
         enabled: true,
         policy: {
+          security_mode: sec.security_mode || 'monitor',
           prevent_screenshots: !!sec.prevent_screenshots,
           focus_watchdog: !!sec.focus_watchdog,
           controlled_paste: !!sec.controlled_paste,
@@ -758,5 +808,5 @@ const JoinSession = (() => {
     }
   }
 
-  return { init, startHeartbeat, stopConnectionRecovery };
+  return { init, startHeartbeat, stopConnectionRecovery, handleFocusSecurityEvent };
 })();

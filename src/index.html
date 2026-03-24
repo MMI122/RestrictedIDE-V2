@@ -124,6 +124,14 @@
         <!-- Security Options -->
         <fieldset class="form-section">
           <legend>Security</legend>
+          <div class="form-row">
+            <label for="sec-policy-mode">Security Policy</label>
+            <select id="sec-policy-mode">
+              <option value="monitor">Monitor (log only)</option>
+              <option value="strict" selected>Strict (auto-submit on repeated violations)</option>
+              <option value="ultra">Ultra Strict (hard lockdown)</option>
+            </select>
+          </div>
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-vm-check" checked /> Block VMs</label>
           </div>
@@ -138,6 +146,10 @@
           </div>
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-controlled-paste" checked /> Controlled Pasting (allow clipboard copy/paste)</label>
+          </div>
+          <div class="form-row">
+            <label for="sec-focus-threshold">Focus Auto-Submit Threshold</label>
+            <input type="number" id="sec-focus-threshold" min="1" max="10" value="3" />
           </div>
           <div class="form-row">
             <label for="session-disconnect-grace">Disconnect Grace (seconds)</label>

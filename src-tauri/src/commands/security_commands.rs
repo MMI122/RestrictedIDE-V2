@@ -1,10 +1,11 @@
 //! Tauri IPC commands for Phase 2 security controls.
 
 use crate::AppState;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KioskPolicyOverride {
+    pub security_mode: Option<String>,
     pub prevent_screenshots: Option<bool>,
     pub focus_watchdog: Option<bool>,
     pub controlled_paste: Option<bool>,
@@ -83,24 +84,41 @@ pub fn set_kiosk_mode(
     log::info!("[Security] Kiosk mode requested: enabled={}", enabled);
 
     let cfg = state.config.lock().unwrap().clone();
+    let security_mode = policy
+        .as_ref()
+        .and_then(|p| p.security_mode.clone())
+        .unwrap_or_else(|| "monitor".to_string())
+        .to_lowercase();
+    let is_ultra = security_mode == "ultra";
     let effective_prevent_screenshots = policy
         .as_ref()
         .and_then(|p| p.prevent_screenshots)
-        .unwrap_or(cfg.security.screenshot_prevention);
+        .unwrap_or(if is_ultra { true } else { cfg.security.screenshot_prevention });
     let effective_focus_watchdog = policy
         .as_ref()
         .and_then(|p| p.focus_watchdog)
-        .unwrap_or(cfg.security.focus_watchdog);
+        .unwrap_or(if is_ultra { true } else { cfg.security.focus_watchdog });
     let effective_controlled_paste = policy
         .as_ref()
         .and_then(|p| p.controlled_paste)
-        .unwrap_or(true);
+        .unwrap_or(!is_ultra);
+
+    let mut blocked_combinations = cfg.input_control.blocked_combinations.clone();
+    if is_ultra {
+        blocked_combinations.extend([
+            vec!["ctrl".to_string(), "c".to_string()],
+            vec!["ctrl".to_string(), "v".to_string()],
+            vec!["ctrl".to_string(), "x".to_string()],
+            vec!["ctrl".to_string(), "insert".to_string()],
+            vec!["shift".to_string(), "insert".to_string()],
+        ]);
+    }
 
     #[cfg(target_os = "windows")]
     {
         if enabled {
             crate::security::keyboard_hook::start_keyboard_hook(
-                cfg.input_control.blocked_combinations.clone(),
+                blocked_combinations,
             );
             crate::security::process_monitor::start_process_monitor(
                 cfg.process_control.blacklist.clone(),
@@ -128,6 +146,16 @@ pub fn set_kiosk_mode(
                     cfg.security.focus_poll_ms,
                 );
             }
+
+            if let Some(win) = app.get_webview_window("main") {
+                if is_ultra {
+                    let _ = win.set_decorations(false);
+                    let _ = win.set_resizable(false);
+                    let _ = win.set_always_on_top(true);
+                    let _ = win.set_fullscreen(true);
+                    let _ = win.set_minimizable(false);
+                }
+            }
         } else {
             crate::security::keyboard_hook::stop_keyboard_hook();
             crate::security::process_monitor::stop_process_monitor();
@@ -136,6 +164,14 @@ pub fn set_kiosk_mode(
             crate::security::mouse_confinement::release_cursor();
 
             crate::security::screenshot_guard::disable_screenshot_prevention(None);
+
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_fullscreen(false);
+                let _ = win.set_always_on_top(false);
+                let _ = win.set_resizable(true);
+                let _ = win.set_decorations(true);
+                let _ = win.set_minimizable(true);
+            }
         }
     }
 
