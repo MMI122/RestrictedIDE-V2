@@ -14,6 +14,7 @@ pub struct SessionState {
     pub lan_server: tokio::sync::Mutex<Option<LanServer>>,
     pub db: Arc<SessionDb>,
     pub current_session_id: std::sync::Mutex<Option<String>>,
+    pub current_student_id: std::sync::Mutex<Option<String>>,
     pub role: std::sync::Mutex<SessionRole>,
 }
 
@@ -37,6 +38,7 @@ impl SessionState {
             lan_server: tokio::sync::Mutex::new(None),
             db,
             current_session_id: std::sync::Mutex::new(None),
+            current_student_id: std::sync::Mutex::new(None),
             role: std::sync::Mutex::new(SessionRole::None),
         }
     }
@@ -99,6 +101,7 @@ pub async fn create_session_cmd(
     // Set role and current session
     *session_state.role.lock().unwrap() = SessionRole::Admin;
     *session_state.current_session_id.lock().unwrap() = Some(resp.session_id.clone());
+    *session_state.current_student_id.lock().unwrap() = None;
 
     log::info!(
         "[Session] Created '{}' code={} addr={}",
@@ -175,6 +178,7 @@ pub async fn join_session_cmd(
 
     *session_state.role.lock().unwrap() = SessionRole::Student;
     *session_state.current_session_id.lock().unwrap() = Some(resp.session_id.clone());
+    *session_state.current_student_id.lock().unwrap() = Some(student_id.clone());
 
     log::info!(
         "[Session] Student '{}' joined session '{}' ({})",
@@ -419,6 +423,7 @@ pub async fn set_runtime_role_cmd(
     session_state: State<'_, SessionState>,
     role: String,
     session_id: Option<String>,
+    student_id: Option<String>,
 ) -> Result<(), String> {
     let parsed = match role.to_lowercase().as_str() {
         "admin" => SessionRole::Admin,
@@ -426,8 +431,20 @@ pub async fn set_runtime_role_cmd(
         _ => SessionRole::None,
     };
 
-    *session_state.role.lock().unwrap() = parsed;
+    *session_state.role.lock().unwrap() = parsed.clone();
+
+    if parsed == SessionRole::None {
+        *session_state.current_session_id.lock().unwrap() = None;
+        *session_state.current_student_id.lock().unwrap() = None;
+        return Ok(());
+    }
+
     *session_state.current_session_id.lock().unwrap() = session_id;
+    *session_state.current_student_id.lock().unwrap() = if parsed == SessionRole::Student {
+        student_id
+    } else {
+        None
+    };
     Ok(())
 }
 

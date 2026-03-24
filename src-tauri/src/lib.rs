@@ -10,9 +10,11 @@ use config::AppConfig;
 use policy::engine::PolicyEngine;
 use runtime::session::SessionManager;
 use std::sync::Mutex;
+use tauri::Emitter;
 use tauri::Manager;
 
-use commands::session_commands::SessionState;
+use commands::session_commands::{SessionRole, SessionState};
+use session::models::SessionStatus;
 use session::db::SessionDb;
 use std::sync::Arc;
 
@@ -67,6 +69,57 @@ pub fn run() {
     tauri::Builder::default()
         .manage(state)
         .manage(session_state)
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let session_state = window.state::<SessionState>();
+                let role = session_state.role.lock().unwrap().clone();
+
+                if role != SessionRole::Student {
+                    return;
+                }
+
+                let session_id = session_state.current_session_id.lock().unwrap().clone();
+                let Some(session_id) = session_id else {
+                    return;
+                };
+
+                let is_active = session_state
+                    .db
+                    .get_session_by_id(&session_id)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.status == SessionStatus::Active)
+                    .unwrap_or(true);
+
+                if !is_active {
+                    return;
+                }
+
+                api.prevent_close();
+
+                let student_id = session_state.current_student_id.lock().unwrap().clone();
+                if let Some(student_id) = student_id.as_deref() {
+                    let _ = session_state.db.add_violation(
+                        &session_id,
+                        student_id,
+                        "close_attempt",
+                        "critical",
+                        Some("Student attempted to close exam window (Alt+F4/window close)"),
+                    );
+                }
+
+                let _ = window.emit(
+                    "security://close-attempted",
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "student_id": student_id,
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                    }),
+                );
+
+                log::warn!("[Security] Close attempt blocked during active student session");
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // File-system commands
             commands::fs_commands::list_dir,

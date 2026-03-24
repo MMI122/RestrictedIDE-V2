@@ -247,6 +247,13 @@ const JoinSession = (() => {
     stopWaitForStart();
     studentSessionStarted = false;
     reconnectInFlight = false;
+    invoke('set_runtime_role_cmd', {
+      role: 'none',
+      sessionId: null,
+      studentId: null,
+    }).catch((e) => {
+      console.warn('Failed to reset runtime role in removed state:', e);
+    });
     setConnectionState('disconnected', 'Removed');
     Session.showScreen('removed');
   }
@@ -688,6 +695,7 @@ const JoinSession = (() => {
       await invoke('set_runtime_role_cmd', {
         role: 'student',
         sessionId: result.session_id,
+        studentId: studentId,
       }).catch((e) => {
         console.warn('Failed to sync runtime role to backend:', e);
       });

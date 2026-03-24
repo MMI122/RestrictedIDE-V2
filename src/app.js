@@ -19,6 +19,54 @@ const IDE = {
   outputVisible: true,
 };
 
+let closeAttemptHandling = false;
+
+function isRemoteSessionServer(server) {
+  if (!server) return false;
+  const host = String(server).split(':')[0].toLowerCase();
+  return host !== 'localhost' && host !== '127.0.0.1';
+}
+
+async function handleCloseAttemptEvent(payload) {
+  if (closeAttemptHandling) return;
+
+  if (Session?.role !== 'student' || !Session?.sessionData?.id || !Session?.sessionData?.studentId) {
+    return;
+  }
+
+  closeAttemptHandling = true;
+  const ts = payload?.timestamp || new Date().toISOString();
+  setStatus('⛔ Close attempt blocked. Auto-submitting exam...');
+  appendOutput('error', '⛔ [Security] Close attempt blocked (Alt+F4/window close). Auto-submitting.');
+
+  const server = Session.sessionData.server || '';
+  if (isRemoteSessionServer(server)) {
+    try {
+      await fetch(`http://${server}/api/session/${Session.sessionData.id}/violations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: Session.sessionData.studentId,
+          event_type: 'close_attempt',
+          severity: 'critical',
+          details: `Close attempt blocked at ${ts}`,
+        }),
+      });
+    } catch (e) {
+      console.warn('Failed to report close-attempt violation over LAN:', e);
+    }
+  }
+
+  try {
+    await SubmitFlow.autoSubmit();
+  } catch (err) {
+    console.error('Auto-submit on close-attempt failed:', err);
+    appendOutput('error', '❌ Auto-submit failed after close attempt. Submit manually now.');
+  } finally {
+    closeAttemptHandling = false;
+  }
+}
+
 const TeacherMaterials = (() => {
   let items = [];
   let activeId = null;
@@ -397,6 +445,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         setStatus('Focus regained');
       }
+    });
+
+    listen('security://close-attempted', (event) => {
+      handleCloseAttemptEvent(event.payload).catch((e) => {
+        console.warn('Close-attempt handler failed:', e);
+      });
     });
   } catch (e) {
     console.error('Init error:', e);

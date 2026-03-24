@@ -95,6 +95,14 @@ const SubmitFlow = (() => {
         console.warn('Kiosk disable warning after submit:', e);
       }
 
+      await invoke('set_runtime_role_cmd', {
+        role: 'none',
+        sessionId: null,
+        studentId: null,
+      }).catch((e) => {
+        console.warn('Runtime role reset warning after submit:', e);
+      });
+
       // Show lock screen
       showCompletionScreen(data, filesToSubmit, isAuto);
 
