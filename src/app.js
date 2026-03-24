@@ -63,15 +63,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         appendOutput('error', '⚠️ [Security] Window focus lost — violation #' + consecutive_losses);
 
         if (Session?.role === 'student' && Session?.sessionData?.id && Session?.sessionData?.studentId) {
-          invoke('report_violation_cmd', {
-            sessionId: Session.sessionData.id,
-            studentId: Session.sessionData.studentId,
-            eventType: 'focus_loss',
-            severity: consecutive_losses >= 3 ? 'critical' : 'warning',
-            details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
-          }).catch((e) => {
-            console.warn('Failed to report focus violation:', e);
-          });
+          const server = Session.sessionData.server || '';
+          const host = server.split(':')[0]?.toLowerCase();
+          const isRemote = host && host !== 'localhost' && host !== '127.0.0.1';
+
+          if (isRemote) {
+            fetch(`http://${server}/api/session/${Session.sessionData.id}/violations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                student_id: Session.sessionData.studentId,
+                event_type: 'focus_loss',
+                severity: consecutive_losses >= 3 ? 'critical' : 'warning',
+                details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
+              }),
+            }).catch((e) => {
+              console.warn('Failed to report focus violation over LAN:', e);
+            });
+          } else {
+            invoke('report_violation_cmd', {
+              sessionId: Session.sessionData.id,
+              studentId: Session.sessionData.studentId,
+              eventType: 'focus_loss',
+              severity: consecutive_losses >= 3 ? 'critical' : 'warning',
+              details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
+            }).catch((e) => {
+              console.warn('Failed to report focus violation:', e);
+            });
+          }
         }
       } else {
         setStatus('Focus regained');

@@ -40,7 +40,7 @@ impl LanServer {
             .route("/api/session/{id}/heartbeat", post(handle_heartbeat))
             .route("/api/session/{id}/participants", get(handle_participants))
             .route("/api/session/{id}/submissions", get(handle_submissions))
-            .route("/api/session/{id}/violations", get(handle_violations))
+            .route("/api/session/{id}/violations", get(handle_violations).post(handle_report_violation))
             .route("/api/session/{id}/broadcasts/{student_id}", get(handle_student_broadcasts))
             .route("/api/session/{id}/questions", get(handle_questions))
             .route("/api/session/{id}/broadcast", post(handle_broadcast))
@@ -317,6 +317,14 @@ struct HeartbeatBody {
     student_id: String,
 }
 
+#[derive(Deserialize)]
+struct ViolationBody {
+    student_id: String,
+    event_type: String,
+    severity: String,
+    details: Option<String>,
+}
+
 // GET /api/session/:id/participants
 async fn handle_participants(
     State(db): State<ServerState>,
@@ -346,6 +354,24 @@ async fn handle_violations(
 ) -> impl IntoResponse {
     match db.get_violations(&id) {
         Ok(vs) => ok_json(vs).into_response(),
+        Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    }
+}
+
+// POST /api/session/:id/violations
+async fn handle_report_violation(
+    State(db): State<ServerState>,
+    Path(id): Path<String>,
+    Json(body): Json<ViolationBody>,
+) -> impl IntoResponse {
+    match db.add_violation(
+        &id,
+        &body.student_id,
+        &body.event_type,
+        &body.severity,
+        body.details.as_deref(),
+    ) {
+        Ok(v) => ok_json(v).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
 }
