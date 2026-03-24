@@ -12,8 +12,7 @@ const QuestionPanel = (() => {
 
   function init() {
     // Toggle panel
-    $('#btn-toggle-question')?.addEventListener('click', togglePanel);
-    $('#btn-open-question-panel')?.addEventListener('click', expandPanel);
+    $('#btn-question-toggle-top')?.addEventListener('click', togglePanel);
     $('#btn-close-doc-viewer')?.addEventListener('click', closeDocViewer);
   }
 
@@ -27,26 +26,28 @@ const QuestionPanel = (() => {
 
   function collapsePanel() {
     const panel = $('#question-panel');
-    const btn = $('#btn-toggle-question');
-    const openBtn = $('#btn-open-question-panel');
+    const topBtn = $('#btn-question-toggle-top');
     if (!panel) return;
 
     panelCollapsed = true;
     panel.classList.add('collapsed');
-    if (btn) btn.textContent = '▶';
-    if (openBtn) openBtn.classList.remove('hidden');
+    if (topBtn) {
+      topBtn.textContent = '▶ Question';
+      topBtn.title = 'Show question panel';
+    }
   }
 
   function expandPanel() {
     const panel = $('#question-panel');
-    const btn = $('#btn-toggle-question');
-    const openBtn = $('#btn-open-question-panel');
+    const topBtn = $('#btn-question-toggle-top');
     if (!panel) return;
 
     panelCollapsed = false;
     panel.classList.remove('collapsed');
-    if (btn) btn.textContent = '◀';
-    if (openBtn) openBtn.classList.add('hidden');
+    if (topBtn) {
+      topBtn.textContent = '◀ Question';
+      topBtn.title = 'Hide question panel';
+    }
   }
 
   function loadQuestions(questionList, allowedUrlList = []) {
