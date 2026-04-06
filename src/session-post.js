@@ -6,8 +6,11 @@
 
 const PostSession = (() => {
   let submissions = [];
+  let violations = [];
   let participantStateByStudent = new Map();
+  let participantNameByStudent = new Map();
   let selectedIndex = -1;
+  let selectedViolationStudent = null;
 
   function init() {
     $('#btn-run-all')?.addEventListener('click', handleRunAll);
@@ -27,7 +30,9 @@ const PostSession = (() => {
 
     // Reset
     submissions = [];
+    violations = [];
     selectedIndex = -1;
+    selectedViolationStudent = null;
     $('#post-results-panel')?.classList.add('hidden');
     $('#post-viewer-title').textContent = 'Select a submission to view';
     $('#post-viewer-code').textContent = '';
@@ -41,10 +46,18 @@ const PostSession = (() => {
       participantStateByStudent = new Map(
         (participants || []).map((p) => [p.student_id, (p.state || 'joined').toLowerCase()]),
       );
+      participantNameByStudent = new Map(
+        (participants || []).map((p) => [p.student_id, p.display_name || p.student_id]),
+      );
+
+      violations = await invoke('get_session_violations_cmd', { sessionId });
+      violations = (violations || []).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     } catch (err) {
       console.error('Failed to load submissions:', err);
       submissions = [];
+      violations = [];
       participantStateByStudent = new Map();
+      participantNameByStudent = new Map();
     }
 
     $('#post-submission-count').textContent = submissions.length;
@@ -53,7 +66,10 @@ const PostSession = (() => {
       if (a.student_id !== b.student_id) return String(a.student_id).localeCompare(String(b.student_id));
       return new Date(b.submitted_at) - new Date(a.submitted_at);
     });
+
     renderSidebar();
+    renderViolationSummary();
+    renderViolationTimeline();
   }
 
   function renderSidebar() {
@@ -117,6 +133,107 @@ const PostSession = (() => {
     const lang = sub.lang || guessLang(sub.filename);
     $('#post-viewer-title').textContent = `${sub.student_id} — ${sub.filename} (${lang})`;
     $('#post-viewer-code').textContent = sub.content || '';
+
+    if (!selectedViolationStudent) {
+      selectedViolationStudent = sub.student_id;
+      renderViolationSummary();
+      renderViolationTimeline();
+    }
+  }
+
+  function renderViolationSummary() {
+    const list = $('#post-violation-student-list');
+    if (!list) return;
+
+    const total = violations.length;
+    const critical = violations.filter((v) => String(v.severity || '').toLowerCase() === 'critical').length;
+
+    const grouped = new Map();
+    for (const v of violations) {
+      const sid = v.student_id || 'unknown';
+      if (!grouped.has(sid)) {
+        grouped.set(sid, { total: 0, critical: 0, warning: 0, latest: null });
+      }
+      const row = grouped.get(sid);
+      row.total += 1;
+      const sev = String(v.severity || '').toLowerCase();
+      if (sev === 'critical') row.critical += 1;
+      else row.warning += 1;
+      if (!row.latest || new Date(v.occurred_at) > new Date(row.latest.occurred_at)) {
+        row.latest = v;
+      }
+    }
+
+    $('#post-violation-total').textContent = String(total);
+    $('#post-violation-students').textContent = String(grouped.size);
+    $('#post-violation-critical').textContent = String(critical);
+
+    if (grouped.size === 0) {
+      list.innerHTML = '<div class="post-violation-empty">No violations recorded.</div>';
+      return;
+    }
+
+    const rows = Array.from(grouped.entries())
+      .sort((a, b) => b[1].total - a[1].total || String(a[0]).localeCompare(String(b[0])));
+
+    list.innerHTML = rows.map(([studentId, info]) => {
+      const active = selectedViolationStudent === studentId ? ' active' : '';
+      const name = participantNameByStudent.get(studentId) || studentId;
+      const latestText = info.latest ? `${escapeHtml(info.latest.event_type)} • ${formatTime(info.latest.occurred_at)}` : '--';
+      return `
+        <div class="post-violation-student${active}" data-student-id="${escapeHtml(studentId)}">
+          <div class="post-violation-student-top">
+            <span class="post-violation-name">${escapeHtml(name)}</span>
+            <span class="post-violation-count">${info.total}</span>
+          </div>
+          <div class="post-violation-student-sub">${escapeHtml(studentId)}</div>
+          <div class="post-violation-metrics">C:${info.critical} W:${info.warning}</div>
+          <div class="post-violation-latest">${latestText}</div>
+        </div>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.post-violation-student').forEach((el) => {
+      el.addEventListener('click', () => {
+        selectedViolationStudent = el.dataset.studentId || null;
+        renderViolationSummary();
+        renderViolationTimeline();
+      });
+    });
+  }
+
+  function renderViolationTimeline() {
+    const timeline = $('#post-violation-timeline');
+    const selectedLabel = $('#post-violation-selected');
+    if (!timeline || !selectedLabel) return;
+
+    let filtered = violations;
+    if (selectedViolationStudent) {
+      filtered = violations.filter((v) => v.student_id === selectedViolationStudent);
+      const name = participantNameByStudent.get(selectedViolationStudent) || selectedViolationStudent;
+      selectedLabel.textContent = `${name} (${selectedViolationStudent})`;
+    } else {
+      selectedLabel.textContent = 'All students';
+    }
+
+    if (filtered.length === 0) {
+      timeline.innerHTML = '<div class="post-violation-empty">No timeline items.</div>';
+      return;
+    }
+
+    timeline.innerHTML = filtered.slice(0, 120).map((v) => {
+      const sev = String(v.severity || 'warning').toLowerCase();
+      return `
+        <div class="post-violation-row ${escapeHtml(sev)}">
+          <div class="post-violation-row-top">
+            <span class="post-violation-row-student">${escapeHtml(v.student_id)}</span>
+            <span class="post-violation-row-time">${formatTime(v.occurred_at)}</span>
+          </div>
+          <div class="post-violation-row-type">${escapeHtml(v.event_type || 'violation')}</div>
+          ${v.details ? `<div class="post-violation-row-details">${escapeHtml(v.details)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
   }
 
   // ── Run All ──
