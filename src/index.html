@@ -365,6 +365,14 @@
         <div class="post-sidebar">
           <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
           <div id="post-submission-list" class="post-submission-list"></div>
+
+          <div class="post-divider"></div>
+          <h3>Violation History (<span id="post-violation-total">0</span>)</h3>
+          <div id="post-violation-stats" class="post-violation-stats">
+            <span class="vstat">Students: <strong id="post-violation-students">0</strong></span>
+            <span class="vstat">Critical: <strong id="post-violation-critical">0</strong></span>
+          </div>
+          <div id="post-violation-student-list" class="post-violation-student-list"></div>
         </div>
 
         <!-- Code viewer + results -->
@@ -389,6 +397,15 @@
               </table>
             </div>
           </div>
+
+          <div id="post-violation-panel" class="post-violation-panel">
+            <div class="post-violation-head">
+              <h3>Violation Timeline</h3>
+              <span id="post-violation-selected" class="post-violation-selected">All students</span>
+            </div>
+            <div id="post-violation-timeline" class="post-violation-timeline"></div>
+          </div>
+
           <!-- Code viewer -->
           <div id="post-code-viewer" class="post-code-viewer">
             <div class="code-viewer-header">
