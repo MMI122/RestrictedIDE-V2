@@ -343,7 +343,7 @@
 
   <!-- ═══════════ POST-SESSION REVIEW (admin) ═══════════ -->
   <div id="post-session-screen" class="session-screen hidden">
-    <div class="post-session-container">
+    <div id="post-session-container" class="post-session-container">
       <div class="post-header">
         <div class="post-header-left">
           <h2 id="post-session-name">Session Review</h2>
@@ -363,23 +363,39 @@
       <div class="post-body">
         <!-- Submission sidebar -->
         <div class="post-sidebar">
-          <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
-          <div id="post-submission-list" class="post-submission-list"></div>
+          <div id="post-submissions-section" class="post-sidebar-section">
+            <div class="post-section-head">
+              <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
+              <button id="btn-focus-submissions" class="post-focus-btn" title="Focus submissions panel">⤢</button>
+            </div>
+            <div id="post-submission-list" class="post-submission-list"></div>
+          </div>
 
           <div class="post-divider"></div>
-          <h3>Violation History (<span id="post-violation-total">0</span>)</h3>
-          <div id="post-violation-stats" class="post-violation-stats">
-            <span class="vstat">Students: <strong id="post-violation-students">0</strong></span>
-            <span class="vstat">Critical: <strong id="post-violation-critical">0</strong></span>
+
+          <div id="post-violations-section" class="post-sidebar-section">
+            <div class="post-section-head">
+              <h3>Violation History (<span id="post-violation-total">0</span>)</h3>
+              <button id="btn-focus-violations-list" class="post-focus-btn" title="Focus violation history panel">⤢</button>
+            </div>
+            <div id="post-violation-stats" class="post-violation-stats">
+              <span class="vstat">Students: <strong id="post-violation-students">0</strong></span>
+              <span class="vstat">Critical: <strong id="post-violation-critical">0</strong></span>
+            </div>
+            <div id="post-violation-student-list" class="post-violation-student-list"></div>
           </div>
-          <div id="post-violation-student-list" class="post-violation-student-list"></div>
         </div>
+
+        <div id="post-sidebar-resize-handle" class="post-sidebar-resize-handle" title="Drag to resize sidebar" aria-label="Resize sidebar"></div>
 
         <!-- Code viewer + results -->
         <div class="post-main">
           <!-- Judge results table -->
           <div id="post-results-panel" class="post-results-panel hidden">
-            <h3>Judge Results</h3>
+            <div class="post-section-head">
+              <h3>Judge Results</h3>
+              <button id="btn-focus-judge" class="post-focus-btn" title="Focus judge results">⤢</button>
+            </div>
             <div id="post-results-table-wrap" class="post-results-table-wrap">
               <table id="post-results-table">
                 <thead>
@@ -398,18 +414,26 @@
             </div>
           </div>
 
+          <div id="post-splitter-results" class="post-splitter horizontal" title="Drag to resize results and timeline" aria-label="Resize results and timeline"></div>
+
           <div id="post-violation-panel" class="post-violation-panel">
             <div class="post-violation-head">
               <h3>Violation Timeline</h3>
-              <span id="post-violation-selected" class="post-violation-selected">All students</span>
+              <div class="post-violation-head-right">
+                <span id="post-violation-selected" class="post-violation-selected">All students</span>
+                <button id="btn-focus-violation-timeline" class="post-focus-btn" title="Focus violation timeline">⤢</button>
+              </div>
             </div>
             <div id="post-violation-timeline" class="post-violation-timeline"></div>
           </div>
+
+          <div id="post-splitter-violation" class="post-splitter horizontal" title="Drag to resize timeline and code" aria-label="Resize timeline and code"></div>
 
           <!-- Code viewer -->
           <div id="post-code-viewer" class="post-code-viewer">
             <div class="code-viewer-header">
               <span id="post-viewer-title">Select a submission to view</span>
+              <button id="btn-focus-code" class="post-focus-btn" title="Focus code viewer">⤢</button>
             </div>
             <pre id="post-viewer-code" class="code-preview"></pre>
           </div>

@@ -11,12 +11,19 @@ const PostSession = (() => {
   let participantNameByStudent = new Map();
   let selectedIndex = -1;
   let selectedViolationStudent = null;
+  let focusMode = 'none';
 
   function init() {
     $('#btn-run-all')?.addEventListener('click', handleRunAll);
     $('#btn-download-all')?.addEventListener('click', handleDownloadAll);
     $('#btn-export-csv')?.addEventListener('click', handleExportCsv);
     $('#btn-delete-session')?.addEventListener('click', handleDeleteSession);
+    $('#btn-focus-submissions')?.addEventListener('click', () => toggleFocus('submissions'));
+    $('#btn-focus-violations-list')?.addEventListener('click', () => toggleFocus('violations-list'));
+    $('#btn-focus-judge')?.addEventListener('click', () => toggleFocus('judge'));
+    $('#btn-focus-violation-timeline')?.addEventListener('click', () => toggleFocus('violation-timeline'));
+    $('#btn-focus-code')?.addEventListener('click', () => toggleFocus('code'));
+    setupResizers();
     $('#btn-back-from-post')?.addEventListener('click', () => {
       Session.showScreen('sessionList');
       SessionList.load();
@@ -33,6 +40,7 @@ const PostSession = (() => {
     violations = [];
     selectedIndex = -1;
     selectedViolationStudent = null;
+    setFocus('none');
     $('#post-results-panel')?.classList.add('hidden');
     $('#post-viewer-title').textContent = 'Select a submission to view';
     $('#post-viewer-code').textContent = '';
@@ -427,6 +435,151 @@ const PostSession = (() => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '--';
     return d.toLocaleTimeString();
+  }
+
+  function toggleFocus(mode) {
+    setFocus(focusMode === mode ? 'none' : mode);
+  }
+
+  function setFocus(mode) {
+    focusMode = mode;
+    const container = $('#post-session-container');
+    if (!container) return;
+
+    container.classList.remove('focus-submissions', 'focus-violations-list', 'focus-judge', 'focus-violation-timeline', 'focus-code');
+    if (mode !== 'none') {
+      container.classList.add(`focus-${mode}`);
+    }
+
+    const activeMap = {
+      submissions: '#btn-focus-submissions',
+      'violations-list': '#btn-focus-violations-list',
+      judge: '#btn-focus-judge',
+      'violation-timeline': '#btn-focus-violation-timeline',
+      code: '#btn-focus-code',
+    };
+
+    Object.values(activeMap).forEach((sel) => {
+      const btn = $(sel);
+      if (btn) btn.classList.remove('active');
+    });
+
+    if (mode !== 'none') {
+      const btn = $(activeMap[mode]);
+      if (btn) btn.classList.add('active');
+    }
+  }
+
+  function setupResizers() {
+    const container = $('#post-session-container');
+    const main = container?.querySelector('.post-main');
+    const sidebar = container?.querySelector('.post-sidebar');
+    const sidebarHandle = $('#post-sidebar-resize-handle');
+    const splitResults = $('#post-splitter-results');
+    const splitViolation = $('#post-splitter-violation');
+    const resultsPanel = $('#post-results-panel');
+    const violationPanel = $('#post-violation-panel');
+    const codePanel = $('#post-code-viewer');
+
+    if (!container || !main || !sidebar || !resultsPanel || !violationPanel || !codePanel) return;
+
+    if (sidebarHandle && !sidebarHandle.dataset.bound) {
+      sidebarHandle.dataset.bound = '1';
+      sidebarHandle.addEventListener('mousedown', (e) => {
+        if (focusMode === 'submissions' || focusMode === 'violations-list') return;
+        e.preventDefault();
+        const rect = container.getBoundingClientRect();
+        const startX = e.clientX;
+        const startW = sidebar.getBoundingClientRect().width;
+
+        const onMove = (ev) => {
+          const dx = ev.clientX - startX;
+          const minW = 220;
+          const maxW = Math.max(420, rect.width * 0.65);
+          const next = Math.min(maxW, Math.max(minW, startW + dx));
+          container.style.setProperty('--post-sidebar-w', `${next}px`);
+        };
+
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.userSelect = '';
+        };
+
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
+    if (splitResults && !splitResults.dataset.bound) {
+      splitResults.dataset.bound = '1';
+      splitResults.addEventListener('mousedown', (e) => {
+        if (focusMode !== 'none') return;
+        if (getComputedStyle(resultsPanel).display === 'none') return;
+        e.preventDefault();
+
+        const startY = e.clientY;
+        const mainH = main.getBoundingClientRect().height;
+        const startResults = resultsPanel.getBoundingClientRect().height;
+        const violationNow = violationPanel.getBoundingClientRect().height;
+        const codeMin = 150;
+        const violationMin = 110;
+        const splitterSpace = 12;
+
+        const onMove = (ev) => {
+          const dy = ev.clientY - startY;
+          const minH = 120;
+          const maxH = Math.max(minH, mainH - violationNow - codeMin - splitterSpace);
+          const next = Math.min(maxH, Math.max(minH, startResults + dy));
+          container.style.setProperty('--post-results-h', `${next}px`);
+        };
+
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.userSelect = '';
+        };
+
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
+    if (splitViolation && !splitViolation.dataset.bound) {
+      splitViolation.dataset.bound = '1';
+      splitViolation.addEventListener('mousedown', (e) => {
+        if (focusMode !== 'none') return;
+        if (getComputedStyle(violationPanel).display === 'none') return;
+        e.preventDefault();
+
+        const startY = e.clientY;
+        const mainH = main.getBoundingClientRect().height;
+        const resultsNow = resultsPanel.getBoundingClientRect().height;
+        const startViolation = violationPanel.getBoundingClientRect().height;
+        const codeMin = 150;
+        const splitterSpace = 12;
+
+        const onMove = (ev) => {
+          const dy = ev.clientY - startY;
+          const minH = 100;
+          const maxH = Math.max(minH, mainH - resultsNow - codeMin - splitterSpace);
+          const next = Math.min(maxH, Math.max(minH, startViolation + dy));
+          container.style.setProperty('--post-violation-h', `${next}px`);
+        };
+
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.userSelect = '';
+        };
+
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
   }
 
   async function getDownloadsDir() {
