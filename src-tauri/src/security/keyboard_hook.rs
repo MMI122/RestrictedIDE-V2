@@ -63,8 +63,8 @@ fn normalize(keys: &[&str]) -> String {
     v.join("+")
 }
 
-/// Determine which modifier keys are currently held down.
-fn active_modifiers() -> Vec<&'static str> {
+/// Determine which modifier keys are active for the current event.
+fn active_modifiers_for_event(vk: u32, flags: u32) -> Vec<&'static str> {
     let mut mods = Vec::new();
     unsafe {
         if GetAsyncKeyState(VK_CONTROL.0 as i32) < 0 {
@@ -80,6 +80,21 @@ fn active_modifiers() -> Vec<&'static str> {
             mods.push("win");
         }
     }
+
+    // Alt+Tab often depends on this event flag rather than async state timing.
+    if (flags & 0x20) != 0 && !mods.contains(&"alt") {
+        mods.push("alt");
+    }
+
+    // Include the current modifier key itself for reliable single-key combos (e.g. Win).
+    match VIRTUAL_KEY(vk as u16) {
+        VK_CONTROL | VK_LCONTROL | VK_RCONTROL if !mods.contains(&"ctrl") => mods.push("ctrl"),
+        VK_MENU | VK_LMENU | VK_RMENU if !mods.contains(&"alt") => mods.push("alt"),
+        VK_SHIFT | VK_LSHIFT | VK_RSHIFT if !mods.contains(&"shift") => mods.push("shift"),
+        VK_LWIN | VK_RWIN if !mods.contains(&"win") => mods.push("win"),
+        _ => {}
+    }
+
     mods
 }
 
@@ -133,11 +148,17 @@ unsafe extern "system" fn keyboard_proc(
     l_param: LPARAM,
 ) -> LRESULT {
     if code as u32 == HC_ACTION {
+        let msg = w_param.0 as u32;
+        let is_key_down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        if !is_key_down {
+            return CallNextHookEx(None, code, w_param, l_param);
+        }
+
         let kb = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
         let vk = kb.vkCode;
 
         // Build current combo
-        let mut keys: Vec<&str> = active_modifiers();
+        let mut keys: Vec<&str> = active_modifiers_for_event(vk, kb.flags.0);
 
         // Don't duplicate modifiers
         let is_modifier = matches!(
