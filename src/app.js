@@ -21,6 +21,11 @@ const IDE = {
 
 let closeAttemptHandling = false;
 let emergencyUnlockInFlight = false;
+let lockdownFocusEnforceTimer = null;
+const LOCKDOWN_FOCUS_ENFORCE_MS = 1500;
+let lockdownBlockedComboAt = 0;
+let lockdownBlockedComboName = '';
+const LOCKDOWN_BLOCKED_COMBO_SUPPRESS_MS = 2200;
 
 function getSessionSecurityMode() {
   return String(Session?.sessionData?.security?.security_mode || 'monitor').toLowerCase();
@@ -28,6 +33,62 @@ function getSessionSecurityMode() {
 
 function isLockdownSession() {
   return getSessionSecurityMode() === 'lockdown';
+}
+
+function clearLockdownFocusEnforceTimer() {
+  if (lockdownFocusEnforceTimer) {
+    clearTimeout(lockdownFocusEnforceTimer);
+    lockdownFocusEnforceTimer = null;
+  }
+}
+
+function markLockdownBlockedCombo(name) {
+  lockdownBlockedComboAt = Date.now();
+  lockdownBlockedComboName = name;
+}
+
+function consumeRecentLockdownBlockedCombo() {
+  const now = Date.now();
+  if (now - lockdownBlockedComboAt <= LOCKDOWN_BLOCKED_COMBO_SUPPRESS_MS) {
+    const name = lockdownBlockedComboName;
+    lockdownBlockedComboAt = 0;
+    lockdownBlockedComboName = '';
+    return name || 'blocked_combo';
+  }
+  return null;
+}
+
+function interceptLockdownBlockedCombo(e) {
+  if (!isLockdownSession() || Session?.role !== 'student') return false;
+
+  const key = String(e.key || '').toLowerCase();
+  const alt = !!e.altKey;
+  const ctrl = !!e.ctrlKey;
+  const shift = !!e.shiftKey;
+  const win = !!e.metaKey || key === 'meta';
+
+  let combo = null;
+  if (alt && key === 'tab') combo = 'alt+tab';
+  else if (alt && key === 'f4') combo = 'alt+f4';
+  else if (alt && key === 'escape') combo = 'alt+escape';
+  else if (ctrl && !alt && !shift && key === 'escape') combo = 'ctrl+escape';
+  else if (ctrl && shift && !alt && key === 'escape') combo = 'ctrl+shift+escape';
+  else if (win && !alt && !ctrl && !shift && key === 'meta') combo = 'win';
+  else if (win && key === 'd') combo = 'win+d';
+  else if (win && key === 'e') combo = 'win+e';
+  else if (win && key === 'r') combo = 'win+r';
+  else if (win && key === 'l') combo = 'win+l';
+  else if (!alt && !ctrl && !shift && key === 'f11') combo = 'f11';
+  else if (!alt && !ctrl && !shift && key === 'f12') combo = 'f12';
+  else if (ctrl && shift && !alt && key === 'i') combo = 'ctrl+shift+i';
+
+  if (!combo) return false;
+
+  markLockdownBlockedCombo(combo);
+  e.preventDefault();
+  e.stopPropagation();
+  appendOutput('info', `🛡️ [Lockdown] Blocked shortcut: ${combo}`);
+  return true;
 }
 
 function isRemoteSessionServer(server) {
@@ -489,7 +550,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ── Security event listeners ──
     listen('security://focus-change', (event) => {
       const { has_focus, timestamp, consecutive_losses } = event.payload;
-      if (!has_focus) {
+
+      const reportAndEnforce = () => {
         setStatus(`⚠️ Focus lost (#${consecutive_losses})`);
         appendOutput('error', '⚠️ [Security] Window focus lost — violation #' + consecutive_losses);
 
@@ -531,7 +593,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
           }
         }
+      };
+
+      if (!has_focus) {
+        if (isLockdownSession()) {
+          const blockedCombo = consumeRecentLockdownBlockedCombo();
+          if (blockedCombo) {
+            setStatus(`Blocked shortcut: ${blockedCombo}`);
+            return;
+          }
+
+          // In lockdown, ignore transient focus blips caused by key spam.
+          clearLockdownFocusEnforceTimer();
+          lockdownFocusEnforceTimer = setTimeout(() => {
+            lockdownFocusEnforceTimer = null;
+            if (!document.hasFocus()) {
+              reportAndEnforce();
+            }
+          }, LOCKDOWN_FOCUS_ENFORCE_MS);
+          return;
+        }
+
+        reportAndEnforce();
       } else {
+        clearLockdownFocusEnforceTimer();
         setStatus('Focus regained');
       }
     });
@@ -565,6 +650,10 @@ function setupActivityBar() {
 /* ── Global keyboard shortcuts ────────────────────────────────────────── */
 
 function handleGlobalKeys(e) {
+  if (interceptLockdownBlockedCombo(e)) {
+    return;
+  }
+
   // Ctrl+S → save
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
