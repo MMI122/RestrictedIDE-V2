@@ -485,7 +485,7 @@ const PostSession = (() => {
 
     if (sidebarHandle && !sidebarHandle.dataset.bound) {
       sidebarHandle.dataset.bound = '1';
-      sidebarHandle.addEventListener('mousedown', (e) => {
+      sidebarHandle.addEventListener('pointerdown', (e) => {
         if (focusMode === 'submissions' || focusMode === 'violations-list') return;
         e.preventDefault();
         const rect = container.getBoundingClientRect();
@@ -501,20 +501,20 @@ const PostSession = (() => {
         };
 
         const onUp = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
           document.body.style.userSelect = '';
         };
 
         document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
       });
     }
 
     if (splitResults && !splitResults.dataset.bound) {
       splitResults.dataset.bound = '1';
-      splitResults.addEventListener('mousedown', (e) => {
+      splitResults.addEventListener('pointerdown', (e) => {
         if (focusMode !== 'none') return;
         if (getComputedStyle(resultsPanel).display === 'none') return;
         e.preventDefault();
@@ -536,20 +536,20 @@ const PostSession = (() => {
         };
 
         const onUp = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
           document.body.style.userSelect = '';
         };
 
         document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
       });
     }
 
     if (splitViolation && !splitViolation.dataset.bound) {
       splitViolation.dataset.bound = '1';
-      splitViolation.addEventListener('mousedown', (e) => {
+      splitViolation.addEventListener('pointerdown', (e) => {
         if (focusMode !== 'none') return;
         if (getComputedStyle(violationPanel).display === 'none') return;
         e.preventDefault();
@@ -570,14 +570,14 @@ const PostSession = (() => {
         };
 
         const onUp = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
           document.body.style.userSelect = '';
         };
 
         document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
       });
     }
   }
