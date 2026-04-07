@@ -820,6 +820,33 @@ const JoinSession = (() => {
     // Activate kiosk lockdown on join (keyboard hooks, process monitoring, etc.)
     try {
       const sec = getSessionSecurity();
+      const mode = normalizeSecurityMode(sec.security_mode);
+
+      if (mode === 'lockdown') {
+        const envStatus = await invoke('get_lockdown_environment_status_cmd').catch((e) => {
+          console.warn('Lockdown environment status check failed:', e);
+          return null;
+        });
+
+        if (!envStatus?.ready) {
+          appendOutput('error', '⛔ Lockdown environment is not active on this machine.');
+          const shouldPrepare = confirm('Lockdown environment is inactive. Prepare it now with admin elevation?');
+          if (shouldPrepare) {
+            const prep = await invoke('prepare_lockdown_environment_cmd').catch((e) => {
+              console.warn('Lockdown environment preparation failed:', e);
+              return { success: false, message: String(e) };
+            });
+
+            if (prep?.success) {
+              alert('Lockdown environment helper finished. Sign in to the RestrictedExam user and relaunch for strict lockdown mode.');
+            } else {
+              alert('Failed to prepare lockdown environment: ' + (prep?.message || 'unknown error'));
+            }
+          }
+          return false;
+        }
+      }
+
       const resp = await invoke('set_kiosk_mode', {
         enabled: true,
         policy: {

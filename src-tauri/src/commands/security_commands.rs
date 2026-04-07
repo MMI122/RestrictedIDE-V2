@@ -2,6 +2,7 @@
 
 use crate::AppState;
 use crate::commands::session_commands::{SessionRole, SessionState};
+use std::path::PathBuf;
 use tauri::{Manager, State};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -72,6 +73,131 @@ pub struct SecurityStatus {
     pub screenshot_prevention: bool,
     pub focus_watchdog: bool,
     pub is_blocked: bool,
+}
+
+fn guess_project_root() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+
+    // Common dev shape: <repo>/src-tauri/target/debug/restricted-ide.exe
+    let dev_candidate = exe
+        .parent()?
+        .parent()?
+        .parent()? // .../src-tauri
+        .parent()? // .../<repo>
+        .to_path_buf();
+    if dev_candidate.join("scripts").join("windows").exists() {
+        return Some(dev_candidate);
+    }
+
+    // Fallback to current working directory
+    let cwd = std::env::current_dir().ok()?;
+    if cwd.join("scripts").join("windows").exists() {
+        return Some(cwd);
+    }
+
+    None
+}
+
+#[tauri::command]
+pub fn get_lockdown_environment_status_cmd() -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        let has_kiosk = args.iter().any(|a| a == "--kiosk");
+        let has_exam_shell = args.iter().any(|a| a == "--exam-shell");
+        let ready = has_kiosk && has_exam_shell;
+
+        return serde_json::json!({
+            "success": true,
+            "platform": "windows",
+            "ready": ready,
+            "has_kiosk_flag": has_kiosk,
+            "has_exam_shell_flag": has_exam_shell,
+            "message": if ready {
+                "Lockdown environment active"
+            } else {
+                "Lockdown environment not active (requires --kiosk --exam-shell launch)"
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        serde_json::json!({
+            "success": true,
+            "platform": std::env::consts::OS,
+            "ready": false,
+            "message": "Lockdown environment helper currently implemented for Windows only"
+        })
+    }
+}
+
+#[tauri::command]
+pub fn prepare_lockdown_environment_cmd() -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        let project_root = match guess_project_root() {
+            Some(p) => p,
+            None => {
+                return serde_json::json!({
+                    "success": false,
+                    "message": "Could not resolve project root for lockdown helper scripts"
+                });
+            }
+        };
+
+        let script_path = project_root
+            .join("scripts")
+            .join("windows")
+            .join("enable-exam-shell.ps1");
+        if !script_path.exists() {
+            return serde_json::json!({
+                "success": false,
+                "message": format!("Lockdown helper script not found: {}", script_path.display())
+            });
+        }
+
+        let app_path = std::env::current_exe()
+            .ok()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+
+        let escaped_script = script_path.display().to_string().replace('"', "\"\"");
+        let escaped_app = app_path.replace('"', "\"\"");
+        let cmd = format!(
+            "Start-Process -FilePath powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"{}\" -AppPath \"{}\"' -Wait",
+            escaped_script, escaped_app
+        );
+
+        let status = std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(cmd)
+            .status();
+
+        return match status {
+            Ok(s) if s.success() => serde_json::json!({
+                "success": true,
+                "message": "Lockdown environment helper executed. Sign in as RestrictedExam and relaunch exam app."
+            }),
+            Ok(s) => serde_json::json!({
+                "success": false,
+                "message": format!("Lockdown helper exited with status: {}", s)
+            }),
+            Err(e) => serde_json::json!({
+                "success": false,
+                "message": format!("Failed to launch lockdown helper: {}", e)
+            }),
+        };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        serde_json::json!({
+            "success": false,
+            "message": "Lockdown environment helper is only available on Windows"
+        })
+    }
 }
 
 /// Enable or disable kiosk mode lockdown.

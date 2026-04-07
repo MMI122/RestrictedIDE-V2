@@ -169,6 +169,8 @@ pub fn run() {
             commands::security_commands::check_monitors,
             commands::security_commands::get_security_status,
             commands::security_commands::set_kiosk_mode,
+            commands::security_commands::get_lockdown_environment_status_cmd,
+            commands::security_commands::prepare_lockdown_environment_cmd,
             // Session
             commands::session_commands::create_session_cmd,
             commands::session_commands::start_session_cmd,
