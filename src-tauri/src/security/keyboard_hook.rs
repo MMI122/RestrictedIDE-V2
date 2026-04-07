@@ -5,8 +5,9 @@
 
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -17,6 +18,43 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 static BLOCKED_COMBOS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
 static HOOK_THREAD_ID: OnceCell<Mutex<Option<u32>>> = OnceCell::new();
 static KEYBOARD_HOOK_RUNNING: AtomicBool = AtomicBool::new(false);
+static LAST_BLOCKED_COMBO_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BLOCKED_COMBO_NAME: OnceCell<Mutex<Option<String>>> = OnceCell::new();
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn mark_blocked_combo(combo: &str) {
+    LAST_BLOCKED_COMBO_MS.store(now_ms(), Ordering::SeqCst);
+    let slot = LAST_BLOCKED_COMBO_NAME.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(combo.to_string());
+    }
+}
+
+/// Return the most recent blocked combo if it happened within `max_age_ms`.
+pub fn take_recent_blocked_combo(max_age_ms: u64) -> Option<String> {
+    let ts = LAST_BLOCKED_COMBO_MS.load(Ordering::SeqCst);
+    if ts == 0 {
+        return None;
+    }
+
+    let age = now_ms().saturating_sub(ts);
+    if age > max_age_ms {
+        return None;
+    }
+
+    let slot = LAST_BLOCKED_COMBO_NAME.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        return guard.take();
+    }
+
+    None
+}
 
 /// Normalise a set of key names into a canonical, sorted, lower-case string.
 fn normalize(keys: &[&str]) -> String {
@@ -123,6 +161,7 @@ unsafe extern "system" fn keyboard_proc(
             if let Some(set) = BLOCKED_COMBOS.get() {
                 if let Ok(lock) = set.lock() {
                     if lock.contains(&combo) {
+                        mark_blocked_combo(&combo);
                         log::warn!("[Security] Blocked keyboard combo: {}", combo);
                         return LRESULT(1); // swallow the key event
                     }

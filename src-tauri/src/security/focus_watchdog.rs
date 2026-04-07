@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 static WATCHDOG_RUNNING: AtomicBool = AtomicBool::new(false);
+const BLOCKED_COMBO_SUPPRESS_MS: u64 = 2500;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FocusEvent {
@@ -73,6 +74,15 @@ pub fn start_focus_watchdog(app: AppHandle, poll_ms: u64) {
 
             if has_focus != had_focus {
                 if !has_focus {
+                    if let Some(combo) = crate::security::keyboard_hook::take_recent_blocked_combo(BLOCKED_COMBO_SUPPRESS_MS) {
+                        log::info!(
+                            "[Security] Suppressing transient focus-loss right after blocked combo: {}",
+                            combo
+                        );
+                        // Keep had_focus=true so we only enforce if focus remains gone.
+                        continue;
+                    }
+
                     consecutive_losses += 1;
                     log::warn!(
                         "[Security] FOCUS LOST — violation #{} at {}",
