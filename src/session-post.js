@@ -52,6 +52,10 @@ const PostSession = (() => {
 
       violations = await invoke('get_session_violations_cmd', { sessionId });
       violations = (violations || []).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+
+      if (!selectedViolationStudent && violations.length > 0) {
+        selectedViolationStudent = violations[0].student_id || null;
+      }
     } catch (err) {
       console.error('Failed to load submissions:', err);
       submissions = [];
@@ -416,6 +420,13 @@ const PostSession = (() => {
     if (result === 'compile_error') return 'compile-error';
     if (result !== 'pending') return 'judged';
     return participantStateByStudent.get(item.student_id) || 'submitted';
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '--';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '--';
+    return d.toLocaleTimeString();
   }
 
   async function getDownloadsDir() {
