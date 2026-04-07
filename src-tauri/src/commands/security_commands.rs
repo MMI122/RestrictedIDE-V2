@@ -106,21 +106,23 @@ pub fn set_kiosk_mode(
         .unwrap_or_else(|| "monitor".to_string())
         .to_lowercase();
     let is_ultra = security_mode == "ultra";
+    let is_lockdown = security_mode == "lockdown";
+    let hard_lock_mode = is_ultra || is_lockdown;
     let effective_prevent_screenshots = policy
         .as_ref()
         .and_then(|p| p.prevent_screenshots)
-        .unwrap_or(if is_ultra { true } else { cfg.security.screenshot_prevention });
+        .unwrap_or(if hard_lock_mode { true } else { cfg.security.screenshot_prevention });
     let effective_focus_watchdog = policy
         .as_ref()
         .and_then(|p| p.focus_watchdog)
-        .unwrap_or(if is_ultra { true } else { cfg.security.focus_watchdog });
+        .unwrap_or(if hard_lock_mode { true } else { cfg.security.focus_watchdog });
     let effective_controlled_paste = policy
         .as_ref()
         .and_then(|p| p.controlled_paste)
-        .unwrap_or(!is_ultra);
+        .unwrap_or(!hard_lock_mode);
 
     let mut blocked_combinations = cfg.input_control.blocked_combinations.clone();
-    if is_ultra {
+    if hard_lock_mode {
         blocked_combinations.extend([
             vec!["ctrl".to_string(), "c".to_string()],
             vec!["ctrl".to_string(), "v".to_string()],
@@ -164,7 +166,7 @@ pub fn set_kiosk_mode(
             }
 
             if let Some(win) = app.get_webview_window("main") {
-                if is_ultra {
+                if hard_lock_mode {
                     let _ = win.set_decorations(false);
                     let _ = win.set_resizable(false);
                     let _ = win.set_always_on_top(true);

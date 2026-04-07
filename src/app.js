@@ -20,6 +20,15 @@ const IDE = {
 };
 
 let closeAttemptHandling = false;
+let emergencyUnlockInFlight = false;
+
+function getSessionSecurityMode() {
+  return String(Session?.sessionData?.security?.security_mode || 'monitor').toLowerCase();
+}
+
+function isLockdownSession() {
+  return getSessionSecurityMode() === 'lockdown';
+}
 
 function isRemoteSessionServer(server) {
   if (!server) return false;
@@ -64,6 +73,84 @@ async function handleCloseAttemptEvent(payload) {
     appendOutput('error', '❌ Auto-submit failed after close attempt. Submit manually now.');
   } finally {
     closeAttemptHandling = false;
+  }
+}
+
+async function requestEmergencyUnlock() {
+  if (emergencyUnlockInFlight) return;
+
+  if (Session?.role !== 'student' || !Session?.sessionData?.id || !Session?.sessionData?.studentId) {
+    return;
+  }
+
+  if (!isLockdownSession()) {
+    appendOutput('error', 'Emergency unlock is only available in lockdown mode.');
+    return;
+  }
+
+  if (!Session.sessionData?.security?.lockdown_emergency_unlock) {
+    appendOutput('error', 'Emergency unlock is disabled for this session.');
+    return;
+  }
+
+  const password = window.prompt('Enter invigilator emergency unlock password:');
+  if (password == null) return;
+
+  const trimmed = String(password).trim();
+  if (!trimmed) {
+    appendOutput('error', 'Emergency unlock canceled: empty password.');
+    return;
+  }
+
+  emergencyUnlockInFlight = true;
+  setStatus('Validating emergency unlock...');
+
+  try {
+    let unlocked = false;
+    const server = Session.sessionData.server || '';
+    if (isRemoteSessionServer(server)) {
+      const res = await fetch(`http://${server}/api/session/${Session.sessionData.id}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: Session.sessionData.studentId,
+          password: trimmed,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${res.status}`);
+      }
+      unlocked = !!(payload.data && payload.data.unlocked);
+    } else {
+      unlocked = await invoke('unlock_lockdown_cmd', {
+        sessionId: Session.sessionData.id,
+        password: trimmed,
+      });
+    }
+
+    if (!unlocked) {
+      appendOutput('error', '⛔ Invalid emergency unlock password.');
+      setStatus('Emergency unlock failed');
+      return;
+    }
+
+    appendOutput('error', '🚨 Emergency unlock approved. Auto-submitting now.');
+    setStatus('Emergency unlock approved. Submitting...');
+
+    try {
+      await invoke('set_kiosk_mode', { enabled: false });
+    } catch (e) {
+      console.warn('Kiosk disable warning before emergency unlock submit:', e);
+    }
+
+    await SubmitFlow.autoSubmit();
+  } catch (err) {
+    console.error('Emergency unlock failed:', err);
+    appendOutput('error', '❌ Emergency unlock failed: ' + (err.message || err));
+    setStatus('Emergency unlock error');
+  } finally {
+    emergencyUnlockInFlight = false;
   }
 }
 
@@ -153,7 +240,7 @@ const TeacherMaterials = (() => {
 
   function isStrictOrUltra() {
     const mode = currentSecurityMode();
-    return mode === 'strict' || mode === 'ultra';
+    return mode === 'strict' || mode === 'ultra' || mode === 'lockdown';
   }
 
   function clearObjectUrl() {
@@ -410,6 +497,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           const server = Session.sessionData.server || '';
           const host = server.split(':')[0]?.toLowerCase();
           const isRemote = host && host !== 'localhost' && host !== '127.0.0.1';
+          const mode = getSessionSecurityMode();
+          const instantCritical = mode === 'ultra' || mode === 'lockdown';
 
           if (isRemote) {
             fetch(`http://${server}/api/session/${Session.sessionData.id}/violations`, {
@@ -418,7 +507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               body: JSON.stringify({
                 student_id: Session.sessionData.studentId,
                 event_type: 'focus_loss',
-                severity: consecutive_losses >= 3 ? 'critical' : 'warning',
+                severity: (instantCritical || consecutive_losses >= 3) ? 'critical' : 'warning',
                 details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
               }),
             }).catch((e) => {
@@ -429,7 +518,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               sessionId: Session.sessionData.id,
               studentId: Session.sessionData.studentId,
               eventType: 'focus_loss',
-              severity: consecutive_losses >= 3 ? 'critical' : 'warning',
+              severity: (instantCritical || consecutive_losses >= 3) ? 'critical' : 'warning',
               details: `Focus lost at ${timestamp}; consecutive=${consecutive_losses}`,
             }).catch((e) => {
               console.warn('Failed to report focus violation:', e);
@@ -490,6 +579,14 @@ function handleGlobalKeys(e) {
   if (e.ctrlKey && e.shiftKey && e.altKey && e.key.toLowerCase() === 'a') {
     e.preventDefault();
     Admin.showDialog();
+  }
+
+  // Ctrl+Shift+U -> emergency unlock (lockdown student sessions)
+  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') {
+    e.preventDefault();
+    requestEmergencyUnlock().catch((err) => {
+      console.warn('Emergency unlock shortcut failed:', err);
+    });
   }
 }
 

@@ -41,6 +41,7 @@ impl LanServer {
             .route("/api/session/{id}/participants", get(handle_participants))
             .route("/api/session/{id}/submissions", get(handle_submissions))
             .route("/api/session/{id}/violations", get(handle_violations).post(handle_report_violation))
+            .route("/api/session/{id}/unlock", post(handle_lockdown_unlock))
             .route("/api/session/{id}/broadcasts/{student_id}", get(handle_student_broadcasts))
             .route("/api/session/{id}/questions", get(handle_questions))
             .route("/api/session/{id}/broadcast", post(handle_broadcast))
@@ -325,6 +326,12 @@ struct ViolationBody {
     details: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct LockdownUnlockBody {
+    student_id: String,
+    password: String,
+}
+
 // GET /api/session/:id/participants
 async fn handle_participants(
     State(db): State<ServerState>,
@@ -374,6 +381,45 @@ async fn handle_report_violation(
         Ok(v) => ok_json(v).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
+}
+
+// POST /api/session/:id/unlock
+async fn handle_lockdown_unlock(
+    State(db): State<ServerState>,
+    Path(id): Path<String>,
+    Json(body): Json<LockdownUnlockBody>,
+) -> impl IntoResponse {
+    let session = match db.get_session_by_id(&id) {
+        Ok(Some(s)) => s,
+        Ok(None) => return err_json(StatusCode::NOT_FOUND, "Session not found").into_response(),
+        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    };
+
+    if session.options.security_mode.to_lowercase() != "lockdown" {
+        return ok_json(serde_json::json!({ "unlocked": false })).into_response();
+    }
+
+    if !session.options.lockdown_emergency_unlock {
+        return ok_json(serde_json::json!({ "unlocked": false })).into_response();
+    }
+
+    let hash = match session.options.lockdown_exit_password_hash.as_deref() {
+        Some(h) => h,
+        None => return ok_json(serde_json::json!({ "unlocked": false })).into_response(),
+    };
+
+    let verified = bcrypt::verify(body.password.trim(), hash).unwrap_or(false);
+    if verified {
+        let _ = db.add_violation(
+            &id,
+            &body.student_id,
+            "emergency_unlock",
+            "critical",
+            Some("Emergency unlock accepted via invigilator password"),
+        );
+    }
+
+    ok_json(serde_json::json!({ "unlocked": verified })).into_response()
 }
 
 // GET /api/session/:id/broadcasts/:student_id

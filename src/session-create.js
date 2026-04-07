@@ -15,8 +15,29 @@ const CreateSession = (() => {
     // Form submission
     $('#create-session-form')?.addEventListener('submit', handleCreateSession);
 
+    // Lockdown-specific settings visibility
+    $('#sec-policy-mode')?.addEventListener('change', syncSecurityModeUI);
+    syncSecurityModeUI();
+
     // Add first question by default
     addQuestionCard();
+  }
+
+  function isLockdownMode() {
+    return ($('#sec-policy-mode')?.value || 'strict') === 'lockdown';
+  }
+
+  function syncSecurityModeUI() {
+    const lockdownBox = $('#lockdown-options');
+    const thresholdInput = $('#sec-focus-threshold');
+    if (!lockdownBox || !thresholdInput) return;
+
+    const lockdown = isLockdownMode();
+    lockdownBox.classList.toggle('hidden', !lockdown);
+    thresholdInput.disabled = lockdown;
+    if (lockdown) {
+      thresholdInput.value = '1';
+    }
   }
 
   function addUrlCard() {
@@ -200,6 +221,9 @@ const CreateSession = (() => {
     const port = parseInt($('#session-port')?.value, 10) || 9876;
     const disconnectGraceSeconds = parseInt($('#session-disconnect-grace')?.value, 10) || 120;
     const focusThreshold = parseInt($('#sec-focus-threshold')?.value, 10) || 3;
+    const lockdownEmergencyUnlock = $('#sec-lockdown-emergency')?.checked ?? true;
+    const lockdownPassword = ($('#sec-lockdown-password')?.value || '').trim();
+    const lockdownPasswordConfirm = ($('#sec-lockdown-password-confirm')?.value || '').trim();
 
     if (!name) return;
 
@@ -218,7 +242,32 @@ const CreateSession = (() => {
       focus_watchdog: $('#sec-focus-watch')?.checked ?? true,
       controlled_paste: $('#sec-controlled-paste')?.checked ?? true,
       focus_auto_submit_threshold: Math.max(1, Math.min(10, focusThreshold)),
+      lockdown_emergency_unlock: lockdownEmergencyUnlock,
     };
+
+    if (security.security_mode === 'lockdown') {
+      if (!lockdownEmergencyUnlock) {
+        alert('Lockdown mode requires Emergency Unlock to be enabled.');
+        return;
+      }
+
+      if (!lockdownPassword || !lockdownPasswordConfirm) {
+        alert('Enter and confirm the emergency unlock password for lockdown mode.');
+        return;
+      }
+
+      if (lockdownPassword.length < 8) {
+        alert('Emergency unlock password must be at least 8 characters.');
+        return;
+      }
+
+      if (lockdownPassword !== lockdownPasswordConfirm) {
+        alert('Emergency unlock password confirmation does not match.');
+        return;
+      }
+
+      security.focus_auto_submit_threshold = 1;
+    }
 
     const btn = $('#btn-create-session');
     const originalText = btn.textContent;
@@ -258,7 +307,9 @@ const CreateSession = (() => {
           controlled_paste: security.controlled_paste,
           focus_auto_submit_threshold: security.focus_auto_submit_threshold,
           disconnect_grace_seconds: Math.max(15, Math.min(600, disconnectGraceSeconds)),
+          lockdown_emergency_unlock: security.lockdown_emergency_unlock,
         },
+        lockdownExitPassword: security.security_mode === 'lockdown' ? lockdownPassword : null,
       });
 
       // Store session data

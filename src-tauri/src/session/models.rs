@@ -57,6 +57,10 @@ pub struct SessionOptions {
     pub focus_auto_submit_threshold: u32,
     #[serde(default = "default_disconnect_grace_seconds")]
     pub disconnect_grace_seconds: u32,
+    #[serde(default = "default_false")]
+    pub lockdown_emergency_unlock: bool,
+    #[serde(default, skip_serializing)]
+    pub lockdown_exit_password_hash: Option<String>,
 }
 
 fn default_disconnect_grace_seconds() -> u32 {
@@ -65,6 +69,10 @@ fn default_disconnect_grace_seconds() -> u32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_security_mode() -> String {
@@ -90,6 +98,8 @@ impl Default for SessionOptions {
             controlled_paste: true,
             focus_auto_submit_threshold: default_focus_auto_submit_threshold(),
             disconnect_grace_seconds: default_disconnect_grace_seconds(),
+            lockdown_emergency_unlock: default_false(),
+            lockdown_exit_password_hash: None,
         }
     }
 }

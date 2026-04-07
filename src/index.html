@@ -130,7 +130,22 @@
               <option value="monitor">Monitor (log only)</option>
               <option value="strict" selected>Strict (auto-submit on repeated violations)</option>
               <option value="ultra">Ultra Strict (hard lockdown)</option>
+              <option value="lockdown">Lockdown (immediate auto-submit + emergency unlock)</option>
             </select>
+          </div>
+          <div id="lockdown-options" class="hidden">
+            <div class="form-row checkbox-row">
+              <label><input type="checkbox" id="sec-lockdown-emergency" checked /> Enable Emergency Unlock</label>
+            </div>
+            <div class="form-row">
+              <label for="sec-lockdown-password">Emergency Unlock Password</label>
+              <input type="password" id="sec-lockdown-password" minlength="8" placeholder="Teacher-only emergency password" autocomplete="new-password" />
+            </div>
+            <div class="form-row">
+              <label for="sec-lockdown-password-confirm">Confirm Emergency Password</label>
+              <input type="password" id="sec-lockdown-password-confirm" minlength="8" placeholder="Re-enter password" autocomplete="new-password" />
+            </div>
+            <div class="lockdown-help">In lockdown mode, one focus loss triggers immediate auto-submit. Emergency unlock is available in student view with Ctrl+Shift+U.</div>
           </div>
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-vm-check" checked /> Block VMs</label>

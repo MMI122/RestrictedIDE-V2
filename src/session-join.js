@@ -33,11 +33,13 @@ const JoinSession = (() => {
       focus_watchdog: true,
       controlled_paste: true,
       focus_auto_submit_threshold: 3,
+      lockdown_emergency_unlock: false,
     };
   }
 
   function normalizeSecurityMode(mode) {
     const m = String(mode || 'monitor').toLowerCase();
+    if (m === 'lockdown') return 'lockdown';
     if (m === 'ultra') return 'ultra';
     if (m === 'strict') return 'strict';
     return 'monitor';
@@ -57,13 +59,15 @@ const JoinSession = (() => {
     const mode = normalizeSecurityMode(sec.security_mode);
     if (mode === 'monitor') return;
 
-    const threshold = mode === 'ultra' ? 1 : getFocusThreshold();
+    const threshold = (mode === 'ultra' || mode === 'lockdown') ? 1 : getFocusThreshold();
     if (consecutiveLosses < threshold) return;
 
     focusEnforcementTriggered = true;
     appendOutput('error', mode === 'ultra'
       ? '⛔ Ultra strict: focus loss detected. Auto-submitting immediately.'
-      : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
+      : mode === 'lockdown'
+        ? '⛔ Lockdown mode: focus loss detected. Auto-submitting immediately.'
+        : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
 
     try {
       await invoke('set_kiosk_mode', { enabled: false });
@@ -685,6 +689,7 @@ const JoinSession = (() => {
           focus_watchdog: result.options?.focus_watchdog ?? true,
           controlled_paste: result.options?.controlled_paste ?? true,
           focus_auto_submit_threshold: result.options?.focus_auto_submit_threshold ?? 3,
+          lockdown_emergency_unlock: result.options?.lockdown_emergency_unlock ?? false,
         },
         server: server,
         studentId: studentId,
