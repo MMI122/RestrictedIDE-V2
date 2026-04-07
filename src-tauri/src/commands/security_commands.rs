@@ -138,6 +138,25 @@ pub fn set_kiosk_mode(
             crate::security::keyboard_hook::start_keyboard_hook(
                 blocked_combinations,
             );
+
+            if hard_lock_mode {
+                // Wait briefly for hook installation to complete on the hook thread.
+                for _ in 0..20 {
+                    if crate::security::keyboard_hook::is_keyboard_hook_installed() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+
+                if !crate::security::keyboard_hook::is_keyboard_hook_installed() {
+                    log::error!("[Security] Hard-lock mode requested but keyboard hook is not installed");
+                    return serde_json::json!({
+                        "success": false,
+                        "message": "Hard-lock protections failed to activate (keyboard hook unavailable)"
+                    });
+                }
+            }
+
             crate::security::process_monitor::start_process_monitor(
                 cfg.process_control.blacklist.clone(),
                 cfg.process_control.monitor_interval_ms,

@@ -18,6 +18,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 static BLOCKED_COMBOS: OnceCell<Mutex<HashSet<String>>> = OnceCell::new();
 static HOOK_THREAD_ID: OnceCell<Mutex<Option<u32>>> = OnceCell::new();
 static KEYBOARD_HOOK_RUNNING: AtomicBool = AtomicBool::new(false);
+static KEYBOARD_HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 static LAST_BLOCKED_COMBO_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BLOCKED_COMBO_NAME: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 
@@ -255,6 +256,7 @@ pub fn start_keyboard_hook(combos: Vec<Vec<String>>) {
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0);
             match hook {
                 Ok(h) => {
+                    KEYBOARD_HOOK_INSTALLED.store(true, Ordering::SeqCst);
                     log::info!("[Security] Low-level keyboard hook installed");
                     // Message loop – required for LL hooks
                     let mut msg = MSG::default();
@@ -265,6 +267,7 @@ pub fn start_keyboard_hook(combos: Vec<Vec<String>>) {
 
                     let _ = UnhookWindowsHookEx(h);
                     KEYBOARD_HOOK_RUNNING.store(false, Ordering::SeqCst);
+                    KEYBOARD_HOOK_INSTALLED.store(false, Ordering::SeqCst);
                     if let Ok(mut slot) = thread_slot.lock() {
                         *slot = None;
                     }
@@ -272,6 +275,7 @@ pub fn start_keyboard_hook(combos: Vec<Vec<String>>) {
                 }
                 Err(e) => {
                     KEYBOARD_HOOK_RUNNING.store(false, Ordering::SeqCst);
+                    KEYBOARD_HOOK_INSTALLED.store(false, Ordering::SeqCst);
                     if let Ok(mut slot) = thread_slot.lock() {
                         *slot = None;
                     }
@@ -293,8 +297,13 @@ pub fn stop_keyboard_hook() {
                 unsafe {
                     let _ = PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0));
                 }
+                KEYBOARD_HOOK_INSTALLED.store(false, Ordering::SeqCst);
                 log::info!("[Security] Keyboard hook stop requested");
             }
         }
     }
+}
+
+pub fn is_keyboard_hook_installed() -> bool {
+    KEYBOARD_HOOK_INSTALLED.load(Ordering::SeqCst)
 }

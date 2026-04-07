@@ -180,12 +180,18 @@ const JoinSession = (() => {
     }
   }
 
-  function beginStudentSession(statusResp) {
+  async function beginStudentSession(statusResp) {
     if (studentSessionStarted) return;
     studentSessionStarted = true;
     stopWaitForStart();
 
-    activateKioskMode();
+    const kioskReady = await activateKioskMode();
+    const mode = normalizeSecurityMode(getSessionSecurity().security_mode);
+    if (mode === 'lockdown' && !kioskReady) {
+      studentSessionStarted = false;
+      showError('Lockdown protections failed to activate on this machine. Cannot start session safely.');
+      return;
+    }
 
     hideStatus();
     Session.enterStudentSession();
@@ -230,7 +236,9 @@ const JoinSession = (() => {
         const statusResp = await fetchSessionStatus();
         const status = normalizeSessionStatus(statusResp?.session?.status);
         if (status === 'active') {
-          beginStudentSession(statusResp);
+          beginStudentSession(statusResp).catch((e) => {
+            console.warn('Failed to begin student session:', e);
+          });
         } else if (status === 'ended') {
           stopWaitForStart();
           showError('This session has already ended.');
@@ -725,7 +733,9 @@ const JoinSession = (() => {
           .then((statusResp) => {
             const status = normalizeSessionStatus(statusResp?.session?.status);
             if (status === 'active') {
-              beginStudentSession(statusResp);
+              beginStudentSession(statusResp).catch((e) => {
+                console.warn('Failed to begin student session:', e);
+              });
             } else if (status === 'ended') {
               showError('This session has already ended.');
             } else {
@@ -822,9 +832,12 @@ const JoinSession = (() => {
 
       if (resp && resp.success === false) {
         console.warn('Kiosk activation skipped:', resp.message || 'unknown reason');
+        return false;
       }
+      return true;
     } catch (err) {
       console.error('Kiosk activation error:', err);
+      return false;
     }
   }
 
