@@ -156,6 +156,34 @@ unsafe extern "system" fn keyboard_proc(
 
         let kb = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
         let vk = kb.vkCode;
+        let alt_down = (kb.flags.0 & 0x20) != 0 || GetAsyncKeyState(VK_MENU.0 as i32) < 0;
+        let ctrl_down = GetAsyncKeyState(VK_CONTROL.0 as i32) < 0;
+        let shift_down = GetAsyncKeyState(VK_SHIFT.0 as i32) < 0;
+        let win_down = GetAsyncKeyState(VK_LWIN.0 as i32) < 0 || GetAsyncKeyState(VK_RWIN.0 as i32) < 0;
+
+        // Fast-path for the most sensitive Windows escape combos.
+        let explicit_combo = match VIRTUAL_KEY(vk as u16) {
+            VK_TAB if alt_down => Some("alt+tab"),
+            VK_F4 if alt_down => Some("alt+f4"),
+            VK_ESCAPE if alt_down => Some("alt+escape"),
+            VK_ESCAPE if ctrl_down && shift_down => Some("ctrl+shift+escape"),
+            VK_ESCAPE if ctrl_down => Some("ctrl+escape"),
+            VK_LWIN | VK_RWIN => Some("win"),
+            _ if win_down && vk == 0x44 => Some("win+d"),
+            _ if win_down && vk == 0x45 => Some("win+e"),
+            _ if win_down && vk == 0x52 => Some("win+r"),
+            _ if win_down && vk == 0x4C => Some("win+l"),
+            VK_F11 => Some("f11"),
+            VK_F12 => Some("f12"),
+            _ if ctrl_down && shift_down && vk == 0x49 => Some("ctrl+shift+i"),
+            _ => None,
+        };
+
+        if let Some(combo) = explicit_combo {
+            mark_blocked_combo(combo);
+            log::warn!("[Security] Explicitly blocked keyboard combo: {}", combo);
+            return LRESULT(1);
+        }
 
         // Build current combo
         let mut keys: Vec<&str> = active_modifiers_for_event(vk, kb.flags.0);
