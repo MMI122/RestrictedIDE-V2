@@ -11,6 +11,8 @@ const PostSession = (() => {
   let participantNameByStudent = new Map();
   let selectedIndex = -1;
   let selectedViolationStudent = null;
+  let activeStudentFilter = 'all';
+  let lastJudgeResults = [];
   let focusMode = 'none';
 
   function init() {
@@ -23,6 +25,9 @@ const PostSession = (() => {
     $('#btn-focus-judge')?.addEventListener('click', () => toggleFocus('judge'));
     $('#btn-focus-violation-timeline')?.addEventListener('click', () => toggleFocus('violation-timeline'));
     $('#btn-focus-code')?.addEventListener('click', () => toggleFocus('code'));
+    $('#post-student-filter')?.addEventListener('change', (e) => {
+      setActiveStudentFilter(e.target.value);
+    });
     setupResizers();
     $('#btn-back-from-post')?.addEventListener('click', () => {
       Session.showScreen('sessionList');
@@ -40,6 +45,8 @@ const PostSession = (() => {
     violations = [];
     selectedIndex = -1;
     selectedViolationStudent = null;
+    activeStudentFilter = 'all';
+    lastJudgeResults = [];
     setFocus('none');
     $('#post-results-panel')?.classList.add('hidden');
     $('#post-viewer-title').textContent = 'Select a submission to view';
@@ -61,9 +68,6 @@ const PostSession = (() => {
       violations = await invoke('get_session_violations_cmd', { sessionId });
       violations = (violations || []).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
 
-      if (!selectedViolationStudent && violations.length > 0) {
-        selectedViolationStudent = violations[0].student_id || null;
-      }
     } catch (err) {
       console.error('Failed to load submissions:', err);
       submissions = [];
@@ -72,29 +76,96 @@ const PostSession = (() => {
       participantNameByStudent = new Map();
     }
 
-    $('#post-submission-count').textContent = submissions.length;
-
     submissions.sort((a, b) => {
       if (a.student_id !== b.student_id) return String(a.student_id).localeCompare(String(b.student_id));
       return new Date(b.submitted_at) - new Date(a.submitted_at);
     });
 
+    populateStudentFilter();
+    setActiveStudentFilter('all');
+  }
+
+  function populateStudentFilter() {
+    const select = $('#post-student-filter');
+    if (!select) return;
+
+    const ids = new Set();
+    participantNameByStudent.forEach((_, sid) => ids.add(sid));
+    submissions.forEach((s) => ids.add(s.student_id));
+    violations.forEach((v) => ids.add(v.student_id));
+
+    const sortedIds = Array.from(ids).sort((a, b) => String(a).localeCompare(String(b)));
+    const options = ['<option value="all">All students</option>'];
+    for (const sid of sortedIds) {
+      const name = participantNameByStudent.get(sid) || sid;
+      options.push(`<option value="${escapeHtml(sid)}">${escapeHtml(name)} (${escapeHtml(sid)})</option>`);
+    }
+    select.innerHTML = options.join('');
+
+    if (activeStudentFilter !== 'all' && !ids.has(activeStudentFilter)) {
+      activeStudentFilter = 'all';
+    }
+    select.value = activeStudentFilter;
+  }
+
+  function setActiveStudentFilter(studentId) {
+    activeStudentFilter = studentId || 'all';
+    const select = $('#post-student-filter');
+    if (select && select.value !== activeStudentFilter) {
+      select.value = activeStudentFilter;
+    }
+
+    if (activeStudentFilter === 'all') {
+      selectedViolationStudent = violations[0]?.student_id || null;
+    } else {
+      selectedViolationStudent = activeStudentFilter;
+    }
+
+    if (selectedIndex >= 0) {
+      const selected = submissions[selectedIndex];
+      if (!selected || !isStudentVisible(selected.student_id)) {
+        selectedIndex = -1;
+        $('#post-viewer-title').textContent = 'Select a submission to view';
+        $('#post-viewer-code').textContent = '';
+      }
+    }
+
     renderSidebar();
     renderViolationSummary();
     renderViolationTimeline();
+
+    if (lastJudgeResults.length > 0) {
+      renderResultsTable(lastJudgeResults);
+    }
+  }
+
+  function isStudentVisible(studentId) {
+    return activeStudentFilter === 'all' || String(studentId) === String(activeStudentFilter);
+  }
+
+  function getFilteredSubmissions() {
+    return submissions.filter((s) => isStudentVisible(s.student_id));
+  }
+
+  function getFilteredViolations() {
+    return violations.filter((v) => isStudentVisible(v.student_id));
   }
 
   function renderSidebar() {
     const list = $('#post-submission-list');
     if (!list) return;
 
-    if (submissions.length === 0) {
+    const filteredSubmissions = getFilteredSubmissions();
+    $('#post-submission-count').textContent = String(filteredSubmissions.length);
+
+    if (filteredSubmissions.length === 0) {
       list.innerHTML = '<div style="color:var(--text-secondary);font-size:12px;padding:16px;text-align:center;">No submissions yet.</div>';
       return;
     }
 
     const grouped = new Map();
     submissions.forEach((s, i) => {
+      if (!isStudentVisible(s.student_id)) return;
       const key = String(s.student_id || 'unknown');
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push({ sub: s, idx: i });
@@ -157,11 +228,12 @@ const PostSession = (() => {
     const list = $('#post-violation-student-list');
     if (!list) return;
 
-    const total = violations.length;
-    const critical = violations.filter((v) => String(v.severity || '').toLowerCase() === 'critical').length;
+    const scopedViolations = getFilteredViolations();
+    const total = scopedViolations.length;
+    const critical = scopedViolations.filter((v) => String(v.severity || '').toLowerCase() === 'critical').length;
 
     const grouped = new Map();
-    for (const v of violations) {
+    for (const v of scopedViolations) {
       const sid = v.student_id || 'unknown';
       if (!grouped.has(sid)) {
         grouped.set(sid, { total: 0, critical: 0, warning: 0, latest: null });
@@ -219,11 +291,15 @@ const PostSession = (() => {
     const selectedLabel = $('#post-violation-selected');
     if (!timeline || !selectedLabel) return;
 
-    let filtered = violations;
-    if (selectedViolationStudent) {
-      filtered = violations.filter((v) => v.student_id === selectedViolationStudent);
+    const scopedViolations = getFilteredViolations();
+    let filtered = scopedViolations;
+    if (activeStudentFilter === 'all' && selectedViolationStudent) {
+      filtered = scopedViolations.filter((v) => v.student_id === selectedViolationStudent);
       const name = participantNameByStudent.get(selectedViolationStudent) || selectedViolationStudent;
       selectedLabel.textContent = `${name} (${selectedViolationStudent})`;
+    } else if (activeStudentFilter !== 'all') {
+      const name = participantNameByStudent.get(activeStudentFilter) || activeStudentFilter;
+      selectedLabel.textContent = `${name} (${activeStudentFilter})`;
     } else {
       selectedLabel.textContent = 'All students';
     }
@@ -265,9 +341,10 @@ const PostSession = (() => {
 
     try {
       const results = await invoke('judge_submissions_cmd', { sessionId: data.id });
+      lastJudgeResults = Array.isArray(results) ? results : [];
 
       // Update local submissions with results
-      for (const r of results) {
+      for (const r of lastJudgeResults) {
         const sub = submissions.find(s => s.id === r.submission_id);
         if (sub) {
           sub.judge_result = r.result;
@@ -278,7 +355,7 @@ const PostSession = (() => {
       }
 
       renderSidebar();
-      renderResultsTable(results);
+      renderResultsTable(lastJudgeResults);
 
       // Re-select if one was active
       if (selectedIndex >= 0) selectSubmission(selectedIndex);
@@ -299,8 +376,9 @@ const PostSession = (() => {
     const body = $('#post-results-body');
     if (!panel || !body) return;
 
+    const scopedResults = (results || []).filter((r) => isStudentVisible(r.student_id));
     panel.classList.remove('hidden');
-    body.innerHTML = results.map(r => {
+    body.innerHTML = scopedResults.map(r => {
       const state = getDisplayStatus(r);
       const badge = `<span class="sub-badge ${escapeHtml(r.result)}">${escapeHtml(r.result)}</span>`;
       const caseHint = (r.failed_case_index && r.total_cases)
