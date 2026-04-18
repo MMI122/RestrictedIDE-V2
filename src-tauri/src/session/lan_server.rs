@@ -168,6 +168,7 @@ async fn handle_health() -> impl IntoResponse {
 struct JoinBody {
     student_id: String,
     display_name: Option<String>,
+    device_id: Option<String>,
 }
 
 async fn handle_join(
@@ -185,21 +186,116 @@ async fn handle_join(
         return err_json(StatusCode::GONE, "Session has ended").into_response();
     }
 
+    let normalized_device = body
+        .device_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let existing_participant = match db.get_participant(&session.id, &body.student_id) {
+        Ok(p) => p,
+        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    };
+
+    if let Some(ref did) = normalized_device {
+        let enforce_device_lock = match existing_participant.as_ref() {
+            Some(p) => !matches!(
+                p.state,
+                ParticipantState::Joined
+                    | ParticipantState::Active
+                    | ParticipantState::Disconnected
+            ),
+            None => true,
+        };
+
+        if enforce_device_lock {
+            if let Ok(participants) = db.get_participants(&session.id) {
+                if let Some(owner) = participants.into_iter().find(|p| {
+                    p.student_id != body.student_id
+                        && p.device_id.as_deref() == Some(did.as_str())
+                        && matches!(
+                            p.state,
+                            ParticipantState::Submitted
+                                | ParticipantState::Kicked
+                                | ParticipantState::ReentryPending
+                        )
+                }) {
+                    if existing_participant.is_none() {
+                        let _ = db.add_participant(
+                            &session.id,
+                            &body.student_id,
+                            body.display_name.as_deref(),
+                            Some(did),
+                        );
+                    }
+                    let _ = db.update_participant_state(&session.id, &body.student_id, "reentry_pending");
+                    let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+                    let _ = db.add_violation(
+                        &session.id,
+                        &body.student_id,
+                        "reentry_request",
+                        "warning",
+                        Some(&format!(
+                            "Device already used in this session by {} and is awaiting/needs admin release",
+                            owner.student_id
+                        )),
+                    );
+                    return err_json(
+                        StatusCode::FORBIDDEN,
+                        "This device is locked for this session. Administrator approval is required to continue",
+                    )
+                    .into_response();
+                }
+            }
+        }
+    }
+
     // Add participant (or re-join if already exists)
-    match db.get_participant(&session.id, &body.student_id) {
-        Ok(Some(p)) => {
-            if p.state == ParticipantState::Kicked {
-                return err_json(StatusCode::FORBIDDEN, "You have been removed from this session").into_response();
+    match existing_participant {
+        Some(p) => {
+            if p.state == ParticipantState::Kicked || p.state == ParticipantState::Submitted {
+                let _ = db.update_participant_state(&session.id, &body.student_id, "reentry_pending");
+                if let Some(ref did) = normalized_device {
+                    let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+                }
+                let _ = db.add_violation(
+                    &session.id,
+                    &body.student_id,
+                    "reentry_request",
+                    "warning",
+                    Some("Student requested re-entry after removal/submission"),
+                );
+                return err_json(
+                    StatusCode::FORBIDDEN,
+                    "Re-entry requires administrator approval for this session",
+                )
+                .into_response();
+            }
+
+            if p.state == ParticipantState::ReentryPending {
+                return err_json(
+                    StatusCode::FORBIDDEN,
+                    "Re-entry request is pending administrator approval",
+                )
+                .into_response();
             }
             // Re-join: update heartbeat
+            if let Some(ref did) = normalized_device {
+                let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+            }
             let _ = db.update_heartbeat(&session.id, &body.student_id);
         }
-        Ok(None) => {
-            if let Err(e) = db.add_participant(&session.id, &body.student_id, body.display_name.as_deref()) {
+        None => {
+            if let Err(e) = db.add_participant(
+                &session.id,
+                &body.student_id,
+                body.display_name.as_deref(),
+                normalized_device.as_deref(),
+            ) {
                 return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
             }
         }
-        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
 
     let questions = db.get_questions(&session.id).unwrap_or_default();
@@ -301,7 +397,10 @@ async fn handle_heartbeat(
     }
 
     if let Ok(Some(p)) = db.get_participant(&id, &body.student_id) {
-        if p.state == ParticipantState::Kicked {
+        if p.state == ParticipantState::Kicked
+            || p.state == ParticipantState::Submitted
+            || p.state == ParticipantState::ReentryPending
+        {
             return err_json(StatusCode::FORBIDDEN, "You have been removed from this session")
                 .into_response();
         }

@@ -138,6 +138,7 @@ pub struct Participant {
     pub session_id: String,
     pub student_id: String,
     pub display_name: Option<String>,
+    pub device_id: Option<String>,
     pub state: ParticipantState,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub joined_at: DateTime<Utc>,
@@ -151,6 +152,7 @@ pub enum ParticipantState {
     Active,
     Submitted,
     Kicked,
+    ReentryPending,
     Disconnected,
 }
 

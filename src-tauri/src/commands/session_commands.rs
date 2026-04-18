@@ -186,6 +186,7 @@ pub async fn join_session_cmd(
     code: String,
     student_id: String,
     display_name: Option<String>,
+    device_id: Option<String>,
 ) -> Result<JoinSessionResponse, String> {
     let transport = session_state.get_transport()?;
     let resp = transport
@@ -194,6 +195,7 @@ pub async fn join_session_cmd(
             &code,
             &student_id,
             display_name.as_deref(),
+            device_id.as_deref(),
         )
         .map_err(transport_err)?;
 

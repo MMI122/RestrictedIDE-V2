@@ -63,6 +63,7 @@ impl SessionDb {
                 session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 student_id      TEXT NOT NULL,
                 display_name    TEXT,
+                device_id       TEXT,
                 state           TEXT NOT NULL DEFAULT 'joined',
                 last_seen_at    TEXT,
                 joined_at       TEXT NOT NULL,
@@ -123,6 +124,10 @@ impl SessionDb {
         );
         let _ = conn.execute(
             "ALTER TABLE session_questions ADD COLUMN hidden_testcases_json TEXT DEFAULT '[]'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE participants ADD COLUMN device_id TEXT",
             [],
         );
         Ok(())
@@ -349,20 +354,22 @@ impl SessionDb {
         session_id: &str,
         student_id: &str,
         display_name: Option<&str>,
+        device_id: Option<&str>,
     ) -> SqlResult<Participant> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO participants (id, session_id, student_id, display_name, state, joined_at, last_seen_at)
-             VALUES (?1, ?2, ?3, ?4, 'joined', ?5, ?5)",
-            params![id, session_id, student_id, display_name, now.to_rfc3339()],
+            "INSERT INTO participants (id, session_id, student_id, display_name, device_id, state, joined_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'joined', ?6, ?6)",
+            params![id, session_id, student_id, display_name, device_id, now.to_rfc3339()],
         )?;
         Ok(Participant {
             id,
             session_id: session_id.to_string(),
             student_id: student_id.to_string(),
             display_name: display_name.map(String::from),
+            device_id: device_id.map(String::from),
             state: ParticipantState::Joined,
             last_seen_at: Some(now),
             joined_at: now,
@@ -377,7 +384,7 @@ impl SessionDb {
     ) -> SqlResult<Option<Participant>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, student_id, display_name, state, last_seen_at, joined_at, submitted_at
+            "SELECT id, session_id, student_id, display_name, device_id, state, last_seen_at, joined_at, submitted_at
              FROM participants WHERE session_id = ?1 AND student_id = ?2",
         )?;
         let mut rows = stmt.query(params![session_id, student_id])?;
@@ -390,7 +397,7 @@ impl SessionDb {
     pub fn get_participants(&self, session_id: &str) -> SqlResult<Vec<Participant>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, student_id, display_name, state, last_seen_at, joined_at, submitted_at
+            "SELECT id, session_id, student_id, display_name, device_id, state, last_seen_at, joined_at, submitted_at
              FROM participants WHERE session_id = ?1",
         )?;
         let ps = stmt
@@ -410,6 +417,20 @@ impl SessionDb {
         conn.execute(
             "UPDATE participants SET state = ?1 WHERE session_id = ?2 AND student_id = ?3",
             params![state, session_id, student_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_participant_device_id(
+        &self,
+        session_id: &str,
+        student_id: &str,
+        device_id: Option<&str>,
+    ) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE participants SET device_id = ?1 WHERE session_id = ?2 AND student_id = ?3",
+            params![device_id, session_id, student_id],
         )?;
         Ok(())
     }
@@ -801,22 +822,24 @@ fn row_to_session(row: &rusqlite::Row) -> SqlResult<Session> {
 }
 
 fn row_to_participant(row: &rusqlite::Row) -> SqlResult<Participant> {
-    let state_str: String = row.get(4)?;
+    let state_str: String = row.get(5)?;
     Ok(Participant {
         id: row.get(0)?,
         session_id: row.get(1)?,
         student_id: row.get(2)?,
         display_name: row.get(3)?,
+        device_id: row.get(4)?,
         state: match state_str.as_str() {
             "active" => ParticipantState::Active,
             "submitted" => ParticipantState::Submitted,
             "kicked" => ParticipantState::Kicked,
+            "reentry_pending" => ParticipantState::ReentryPending,
             "disconnected" => ParticipantState::Disconnected,
             _ => ParticipantState::Joined,
         },
-        last_seen_at: row.get::<_, Option<String>>(5)?.and_then(|s| s.parse().ok()),
-        joined_at: parse_dt_or_now(row.get::<_, Option<String>>(6)?),
-        submitted_at: row.get::<_, Option<String>>(7)?.and_then(|s| s.parse().ok()),
+        last_seen_at: row.get::<_, Option<String>>(6)?.and_then(|s| s.parse().ok()),
+        joined_at: parse_dt_or_now(row.get::<_, Option<String>>(7)?),
+        submitted_at: row.get::<_, Option<String>>(8)?.and_then(|s| s.parse().ok()),
     })
 }
 
