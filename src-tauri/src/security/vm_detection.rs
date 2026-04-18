@@ -27,12 +27,22 @@ pub fn detect_vm() -> VmCheckResult {
     // 4) Check MAC address OUI prefixes for VM NICs
     check_mac_address(&mut indicators);
 
-    let is_vm = !indicators.is_empty();
+    let (strong_count, weak_count) = count_indicator_strength(&indicators);
+    let is_vm = strong_count >= 1 || weak_count >= 2;
 
     if is_vm {
         log::warn!(
-            "[Security] VM detected — {} indicator(s): {:?}",
+            "[Security] VM detected — strong={}, weak={}, total={} indicators: {:?}",
+            strong_count,
+            weak_count,
             indicators.len(),
+            indicators
+        );
+    } else if !indicators.is_empty() {
+        log::info!(
+            "[Security] VM check suspicious but allowed — strong={}, weak={}, indicators={:?}",
+            strong_count,
+            weak_count,
             indicators
         );
     } else {
@@ -40,6 +50,26 @@ pub fn detect_vm() -> VmCheckResult {
     }
 
     VmCheckResult { is_vm, indicators }
+}
+
+fn count_indicator_strength(indicators: &[String]) -> (usize, usize) {
+    let mut strong = 0usize;
+    let mut weak = 0usize;
+
+    for indicator in indicators {
+        // Strong: direct host artifacts that are unlikely on physical machines.
+        if indicator.starts_with("Registry:")
+            || indicator.starts_with("Process:")
+            || indicator.starts_with("MAC prefix:")
+        {
+            strong += 1;
+        // Weak: WMI-reported strings can vary across OEMs and firmware.
+        } else if indicator.starts_with("WMI ") {
+            weak += 1;
+        }
+    }
+
+    (strong, weak)
 }
 
 /// Check Windows registry for VM-specific keys/values.
