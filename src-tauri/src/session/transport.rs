@@ -41,6 +41,7 @@ pub trait SessionTransport: Send + Sync {
         code: &str,
         student_id: &str,
         display_name: Option<&str>,
+        device_id: Option<&str>,
     ) -> Result<JoinSessionResponse, TransportError>;
 
     /// Student submits code.
@@ -113,6 +114,34 @@ pub struct LanTransport {
 impl LanTransport {
     pub fn new(db: Arc<SessionDb>) -> Self {
         Self { db }
+    }
+
+    fn normalize_device_id(device_id: Option<&str>) -> Option<String> {
+        let trimmed = device_id.map(str::trim).unwrap_or_default();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+
+    fn find_locked_device_owner(
+        &self,
+        session_id: &str,
+        student_id: &str,
+        device_id: &str,
+    ) -> Result<Option<Participant>, TransportError> {
+        let participants = self.db.get_participants(session_id)?;
+        Ok(participants.into_iter().find(|p| {
+            p.student_id != student_id
+                && p.device_id.as_deref() == Some(device_id)
+                && matches!(
+                    p.state,
+                    ParticipantState::Submitted
+                        | ParticipantState::Kicked
+                        | ParticipantState::ReentryPending
+                )
+        }))
     }
 }
 
@@ -208,6 +237,7 @@ impl SessionTransport for LanTransport {
         code: &str,
         student_id: &str,
         display_name: Option<&str>,
+        device_id: Option<&str>,
     ) -> Result<JoinSessionResponse, TransportError> {
         let session = self
             .db
@@ -218,12 +248,90 @@ impl SessionTransport for LanTransport {
             return Err(TransportError::InvalidState("Session has ended".into()));
         }
 
+        let normalized_device = Self::normalize_device_id(device_id);
+
+        let existing_participant = self.db.get_participant(&session.id, student_id)?;
+
+        if let Some(ref did) = normalized_device {
+            let enforce_device_lock = match existing_participant.as_ref() {
+                Some(p) => !matches!(
+                    p.state,
+                    ParticipantState::Joined
+                        | ParticipantState::Active
+                        | ParticipantState::Disconnected
+                ),
+                None => true,
+            };
+
+            if enforce_device_lock {
+                if let Some(owner) = self.find_locked_device_owner(&session.id, student_id, did)? {
+                    if existing_participant.is_none() {
+                        let _ = self.db.add_participant(
+                            &session.id,
+                            student_id,
+                            display_name,
+                            Some(did),
+                        );
+                    }
+                    let _ = self
+                        .db
+                        .update_participant_state(&session.id, student_id, "reentry_pending");
+                    let _ = self
+                        .db
+                        .update_participant_device_id(&session.id, student_id, Some(did));
+                    let _ = self.db.add_violation(
+                        &session.id,
+                        student_id,
+                        "reentry_request",
+                        "warning",
+                        Some(&format!(
+                            "Device already used in this session by {} and is awaiting/needs admin release",
+                            owner.student_id
+                        )),
+                    );
+                    return Err(TransportError::InvalidState(
+                        "This device is locked for this session. Administrator approval is required to continue"
+                            .into(),
+                    ));
+                }
+            }
+        }
+
         // Check if already joined
-        if self.db.get_participant(&session.id, student_id)?.is_some() {
-            // Already joined — return session info (re-join)
+        if let Some(p) = existing_participant {
+            match p.state {
+                ParticipantState::Kicked | ParticipantState::Submitted => {
+                    let _ = self
+                        .db
+                        .update_participant_state(&session.id, student_id, "reentry_pending");
+                    let _ = self.db.add_violation(
+                        &session.id,
+                        student_id,
+                        "reentry_request",
+                        "warning",
+                        Some("Student requested re-entry after removal/submission"),
+                    );
+                    return Err(TransportError::InvalidState(
+                        "Re-entry requires administrator approval for this session".into(),
+                    ));
+                }
+                ParticipantState::ReentryPending => {
+                    return Err(TransportError::InvalidState(
+                        "Re-entry request is pending administrator approval".into(),
+                    ));
+                }
+                _ => {
+                    // Already joined/active/disconnected — allow reconnect.
+                    if let Some(ref did) = normalized_device {
+                        let _ = self
+                            .db
+                            .update_participant_device_id(&session.id, student_id, Some(did));
+                    }
+                }
+            }
         } else {
             self.db
-                .add_participant(&session.id, student_id, display_name)?;
+                .add_participant(&session.id, student_id, display_name, normalized_device.as_deref())?;
         }
 
         let questions = self.db.get_questions(&session.id)?;
@@ -268,9 +376,15 @@ impl SessionTransport for LanTransport {
         }
 
         if let Some(p) = self.db.get_participant(&req.session_id, &req.student_id)? {
-            if p.state == ParticipantState::Kicked {
+            if matches!(
+                p.state,
+                ParticipantState::Kicked
+                    | ParticipantState::Submitted
+                    | ParticipantState::ReentryPending
+            ) {
                 return Err(TransportError::InvalidState(
-                    "You have been removed from this session".into(),
+                    "You are not allowed to re-enter this session without admin approval"
+                        .into(),
                 ));
             }
         }

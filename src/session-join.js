@@ -18,6 +18,23 @@ const JoinSession = (() => {
   let adminEndHandled = false;
   let focusEnforcementTriggered = false;
 
+  let cachedDeviceId = null;
+
+  async function getDeviceId() {
+    if (cachedDeviceId) return cachedDeviceId;
+    try {
+      const info = await invoke('get_system_info');
+      const platform = String(info?.platform || 'unknown').toLowerCase();
+      const arch = String(info?.arch || 'unknown').toLowerCase();
+      const host = String(info?.hostname || 'unknown').toLowerCase();
+      cachedDeviceId = `${platform}:${arch}:${host}`;
+    } catch (e) {
+      console.warn('Failed to read system info for device ID:', e);
+      cachedDeviceId = 'unknown-device';
+    }
+    return cachedDeviceId;
+  }
+
   function getDisconnectGraceSeconds() {
     const v = Number(Session.sessionData?.disconnectGraceSeconds);
     if (!Number.isFinite(v)) return DEFAULT_DISCONNECT_GRACE_SECONDS;
@@ -494,6 +511,7 @@ const JoinSession = (() => {
           Session.sessionData.code,
           Session.sessionData.studentId,
           Session.sessionData.displayName || Session.sessionData.studentId,
+          Session.sessionData.deviceId || await getDeviceId(),
         );
       } else {
         await invoke('join_session_cmd', {
@@ -501,6 +519,7 @@ const JoinSession = (() => {
           code: Session.sessionData.code,
           studentId: Session.sessionData.studentId,
           displayName: Session.sessionData.displayName,
+          deviceId: Session.sessionData.deviceId || await getDeviceId(),
         });
       }
 
@@ -556,12 +575,13 @@ const JoinSession = (() => {
     return addr !== 'localhost' && addr !== '127.0.0.1';
   }
 
-  async function joinViaHttp(server, code, studentId, displayName) {
+  async function joinViaHttp(server, code, studentId, displayName, deviceId) {
     // Join via HTTP request to remote LAN server
     const url = `http://${server}/api/session/${code}/join`;
     const payload = {
       student_id: studentId,
       display_name: displayName,
+      device_id: deviceId,
     };
 
     const response = await fetch(url, {
@@ -662,11 +682,12 @@ const JoinSession = (() => {
       showStatus('Connecting to server...');
 
       let result;
+      const deviceId = await getDeviceId();
       
       if (isRemote) {
         // Join via HTTP to remote LAN server
         showStatus('Joining remote session...');
-        result = await joinViaHttp(server, code, studentId, displayName);
+        result = await joinViaHttp(server, code, studentId, displayName, deviceId);
       } else {
         // Local IPC join (for development)
         result = await invoke('join_session_cmd', {
@@ -674,6 +695,7 @@ const JoinSession = (() => {
           code: code,
           studentId: studentId,
           displayName: displayName,
+          deviceId: deviceId,
         });
       }
 
@@ -704,6 +726,7 @@ const JoinSession = (() => {
         server: server,
         studentId: studentId,
         displayName: displayName,
+        deviceId: deviceId,
         language: null,
       };
       Session.role = 'student';

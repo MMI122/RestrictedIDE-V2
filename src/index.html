@@ -245,6 +245,7 @@
         </div>
         <div class="dashboard-header-right">
           <span id="dashboard-timer" class="dashboard-timer">--:--</span>
+          <span id="dash-reentry-alert" class="reentry-alert-badge hidden">Re-entry requests: 0</span>
           <button class="landing-btn primary" id="btn-start-session">▶ Start Session</button>
           <button class="landing-btn outline" id="btn-end-session" style="display:none;">■ End Session</button>
           <button class="landing-btn primary" id="btn-review-submissions" style="display:none;">📋 Review Submissions</button>
@@ -295,6 +296,12 @@
         <div class="dash-card" id="dash-participants">
           <h3>Participants (<span id="dash-participant-count">0</span>)</h3>
           <div id="participant-list" class="participant-list"></div>
+        </div>
+
+        <!-- Re-entry Requests -->
+        <div class="dash-card" id="dash-reentry-requests">
+          <h3>Re-entry Requests (<span id="dash-reentry-count">0</span>)</h3>
+          <div id="reentry-request-list" class="reentry-request-list"></div>
         </div>
 
         <!-- Participant Detail -->

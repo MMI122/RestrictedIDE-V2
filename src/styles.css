@@ -1239,6 +1239,27 @@ button {
   gap: 10px;
 }
 
+.reentry-alert-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #f85149;
+  background: #f8514920;
+  color: #ffb3ad;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.reentry-alert-badge.blink {
+  animation: reentry-alert-blink 0.9s linear infinite;
+}
+
+@keyframes reentry-alert-blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
 .dashboard-timer {
   font-family: var(--font-mono);
   font-size: 24px;
@@ -1299,6 +1320,51 @@ button {
   gap: 4px;
   max-height: 300px;
   overflow-y: auto;
+}
+
+.reentry-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.reentry-request-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.reentry-request-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  padding: 8px 10px;
+}
+
+.reentry-request-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reentry-student-name {
+  color: var(--text-bright);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reentry-student-id {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-mono);
 }
 
 .participant-row {
