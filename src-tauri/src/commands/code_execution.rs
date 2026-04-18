@@ -3,6 +3,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -25,6 +28,9 @@ pub struct CodeExit {
 }
 
 const MAX_EXEC_SECS: u64 = 120;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -155,13 +161,18 @@ pub fn run_code(
 
         emit_output(&app, "info", "⏳ Compiling…\n");
 
-        let compile = Command::new(compiler)
+        let mut compile_cmd = Command::new(compiler);
+        compile_cmd
             .args(&compile_args)
             .current_dir(&work_dir)
             .envs(&env)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        compile_cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let compile = compile_cmd.output();
 
         match compile {
             Ok(out) => {
@@ -213,15 +224,19 @@ fn spawn_and_stream(
 ) -> Result<(), String> {
     log::info!("[CODE] spawn_and_stream: cmd={} args={:?} cwd={}", cmd, args, work_dir);
 
-    let mut child = Command::new(cmd)
+    let mut command = Command::new(cmd);
+    command
         .args(args)
         .current_dir(work_dir)
         .envs(env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = command.spawn().map_err(|e| {
             log::error!("[CODE] Failed to spawn process: {}", e);
             emit_output(&app, "stderr", &format!("Failed to start '{}': {}\nMake sure the compiler/interpreter is installed and in your PATH.\n", cmd, e));
             let _ = app.emit("code-exit", CodeExit { code: Some(1), signal: None, error: Some(e.to_string()) });
