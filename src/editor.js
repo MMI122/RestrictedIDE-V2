@@ -1,25 +1,195 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Restricted IDE – editor.js  (code editor, tabs, syntax highlighting)
+// Restricted IDE – editor.js  (Monaco preserve-design integration)
 // ═══════════════════════════════════════════════════════════════════════════
 
 'use strict';
 
 const Editor = (() => {
+  const textarea = () => $('#code-editor'); // hidden compatibility bridge
+  const container = () => $('#editor-container');
+  const welcome = () => $('#welcome');
+  const tabBar = () => $('#tab-bar');
+  const monacoHost = () => $('#monaco-editor');
 
-  /* ── DOM refs ───────────────────────────────────────────────────────── */
+  let monacoEditor = null;
+  let monacoReady = null;
+  let viewToken = 0;
 
-  const textarea   = () => $('#code-editor');
-  const highlight  = () => $('#syntax-highlight');
-  const lineNums   = () => $('#line-numbers');
-  const container  = () => $('#editor-container');
-  const welcome    = () => $('#welcome');
-  const tabBar     = () => $('#tab-bar');
+  function getExt(name) {
+    if (!name) return '';
+    const i = name.lastIndexOf('.');
+    return i >= 0 ? name.slice(i).toLowerCase() : '';
+  }
 
-  /* ── Tab management ─────────────────────────────────────────────────── */
+  function monacoLanguageForFile(name) {
+    const ext = getExt(name);
+    switch (ext) {
+      case '.js': return 'javascript';
+      case '.ts': return 'typescript';
+      case '.jsx': return 'javascript';
+      case '.tsx': return 'typescript';
+      case '.py': return 'python';
+      case '.c': return 'c';
+      case '.cpp': return 'cpp';
+      case '.h': return 'cpp';
+      case '.hpp': return 'cpp';
+      case '.java': return 'java';
+      case '.json': return 'json';
+      case '.html': return 'html';
+      case '.css': return 'css';
+      case '.scss': return 'scss';
+      case '.md': return 'markdown';
+      case '.xml': return 'xml';
+      case '.yaml': return 'yaml';
+      case '.yml': return 'yaml';
+      case '.sql': return 'sql';
+      case '.sh': return 'shell';
+      case '.ps1': return 'powershell';
+      case '.go': return 'go';
+      case '.rs': return 'rust';
+      case '.php': return 'php';
+      case '.rb': return 'ruby';
+      default: return 'plaintext';
+    }
+  }
+
+  function syncHiddenTextarea() {
+    const ta = textarea();
+    if (!ta) return;
+    ta.value = getCurrentContent();
+  }
+
+  function getCurrentContent() {
+    if (monacoEditor) return monacoEditor.getValue();
+    return textarea()?.value || '';
+  }
+
+  function setCurrentContent(content, name) {
+    if (monacoEditor) {
+      monacoEditor.setValue(content || '');
+      const model = monacoEditor.getModel();
+      if (model && window.monaco?.editor) {
+        window.monaco.editor.setModelLanguage(model, monacoLanguageForFile(name));
+      }
+    } else if (textarea()) {
+      textarea().value = content || '';
+    }
+    syncHiddenTextarea();
+  }
+
+  function updateCursorPos() {
+    if (!monacoEditor) {
+      const ta = textarea();
+      if (!ta) return;
+      const val = ta.value.substring(0, ta.selectionStart);
+      const lines = val.split('\n');
+      const ln = lines.length;
+      const col = lines[lines.length - 1].length + 1;
+      $('#status-line').textContent = `Ln ${ln}, Col ${col}`;
+      return;
+    }
+
+    const pos = monacoEditor.getPosition();
+    if (!pos) return;
+    $('#status-line').textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`;
+  }
+
+  function applyMonacoTheme() {
+    const root = getComputedStyle(document.documentElement);
+    const bg = (root.getPropertyValue('--bg-primary') || '#1e1e1e').trim();
+    const fg = (root.getPropertyValue('--text-primary') || '#d4d4d4').trim();
+    const accent = (root.getPropertyValue('--accent') || '#569cd6').trim();
+
+    window.monaco.editor.defineTheme('ride-preserve', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': bg,
+        'editor.foreground': fg,
+        'editor.lineHighlightBackground': '#ffffff0d',
+        'editorCursor.foreground': accent,
+        'editorLineNumber.foreground': '#7a7a7a',
+        'editorLineNumber.activeForeground': '#cfcfcf',
+        'editor.selectionBackground': '#264f78',
+        'editor.inactiveSelectionBackground': '#3a3d41',
+      },
+    });
+
+    window.monaco.editor.setTheme('ride-preserve');
+  }
+
+  function initMonaco() {
+    if (monacoReady) return monacoReady;
+
+    monacoReady = new Promise((resolve) => {
+      if (!window.require || !monacoHost()) {
+        console.warn('[Editor] Monaco loader not available, using fallback textarea mode.');
+        resolve(false);
+        return;
+      }
+
+      window.require.config({ paths: { vs: 'vendor/vs' } });
+      window.require(['vs/editor/editor.main'], () => {
+        try {
+          applyMonacoTheme();
+
+          monacoEditor = window.monaco.editor.create(monacoHost(), {
+            value: '',
+            language: 'plaintext',
+            automaticLayout: true,
+            fontFamily: 'Consolas, "Courier New", monospace',
+            fontSize: 14,
+            lineHeight: 22,
+            minimap: { enabled: false },
+            glyphMargin: false,
+            scrollBeyondLastLine: false,
+            renderLineHighlight: 'line',
+            wordWrap: 'off',
+            tabSize: 4,
+            insertSpaces: true,
+            detectIndentation: false,
+            roundedSelection: false,
+            stickyScroll: { enabled: false },
+            bracketPairColorization: { enabled: true },
+            guides: {
+              indentation: true,
+              bracketPairs: true,
+            },
+            quickSuggestions: true,
+            suggestOnTriggerCharacters: true,
+            parameterHints: { enabled: true },
+          });
+
+          monacoEditor.onDidChangeModelContent(() => {
+            if (IDE.activeTab !== null && IDE.openTabs[IDE.activeTab]) {
+              const tab = IDE.openTabs[IDE.activeTab];
+              tab.content = monacoEditor.getValue();
+              tab.modified = tab.content !== tab.savedContent;
+              renderTabs();
+            }
+            syncHiddenTextarea();
+            updateCursorPos();
+          });
+
+          monacoEditor.onDidChangeCursorPosition(() => updateCursorPos());
+          syncHiddenTextarea();
+          resolve(true);
+        } catch (e) {
+          console.warn('[Editor] Monaco initialization failed:', e);
+          resolve(false);
+        }
+      }, () => {
+        console.warn('[Editor] Monaco module load failed, using fallback textarea mode.');
+        resolve(false);
+      });
+    });
+
+    return monacoReady;
+  }
 
   function openFile(path, name, content) {
-    // Already open?
-    const idx = IDE.openTabs.findIndex(t => t.path === path);
+    const idx = IDE.openTabs.findIndex((t) => t.path === path);
     if (idx >= 0) {
       switchTab(idx);
       return;
@@ -34,9 +204,8 @@ const Editor = (() => {
   function switchTab(idx) {
     if (idx < 0 || idx >= IDE.openTabs.length) return;
 
-    // Save current editor state
     if (IDE.activeTab !== null && IDE.openTabs[IDE.activeTab]) {
-      IDE.openTabs[IDE.activeTab].content = textarea().value;
+      IDE.openTabs[IDE.activeTab].content = getCurrentContent();
     }
 
     IDE.activeTab = idx;
@@ -45,16 +214,21 @@ const Editor = (() => {
     showEditor(tab.content, tab.name);
   }
 
-  function closeTab(idx) {
+  function closeTab(idxOrPath) {
+    let idx = idxOrPath;
+    if (typeof idxOrPath === 'string') {
+      idx = IDE.openTabs.findIndex((t) => t.path === idxOrPath);
+    }
+    if (!Number.isInteger(idx) || idx < 0 || idx >= IDE.openTabs.length) return;
+
     const tab = IDE.openTabs[idx];
     if (tab.modified) {
-      if (!confirm(`Save changes to ${tab.name}?`)) {
-        // discard
-      } else {
+      if (confirm(`Save changes to ${tab.name}?`)) {
         switchTab(idx);
         save();
       }
     }
+
     IDE.openTabs.splice(idx, 1);
     if (IDE.openTabs.length === 0) {
       IDE.activeTab = null;
@@ -92,49 +266,21 @@ const Editor = (() => {
     });
   }
 
-  /* ── Editor display ─────────────────────────────────────────────────── */
-
   function showEditor(content, name) {
+    const token = ++viewToken;
     container().style.display = 'flex';
+    container().classList.add('monaco-mode');
     welcome().classList.add('hidden');
 
-    const ta = textarea();
-    ta.value = content;
-    updateLineNumbers(content);
-    updateHighlight(content, name);
+    if (textarea()) textarea().value = content || '';
     setLanguageStatus(langFromExt(getExt(name)));
 
-    // Sync scroll
-    ta.onscroll = syncScroll;
-    ta.oninput = () => {
-      const val = ta.value;
-      if (IDE.activeTab !== null) {
-        const tab = IDE.openTabs[IDE.activeTab];
-        tab.content = val;
-        tab.modified = val !== tab.savedContent;
-        renderTabs();
-      }
-      updateLineNumbers(val);
-      updateHighlight(val, IDE.openTabs[IDE.activeTab]?.name || '');
-    };
-
-    // Cursor position update
-    ta.addEventListener('click', updateCursorPos);
-    ta.addEventListener('keyup', updateCursorPos);
-
-    // Tab key support
-    ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = ta.selectionStart;
-        const end = ta.selectionEnd;
-        ta.value = ta.value.substring(0, start) + '    ' + ta.value.substring(end);
-        ta.selectionStart = ta.selectionEnd = start + 4;
-        ta.dispatchEvent(new Event('input'));
-      }
+    initMonaco().then((ok) => {
+      if (token !== viewToken || !ok || !monacoEditor) return;
+      setCurrentContent(content || '', name || '');
+      monacoEditor.focus();
+      updateCursorPos();
     });
-
-    ta.focus();
   }
 
   function hideEditor() {
@@ -142,133 +288,24 @@ const Editor = (() => {
     welcome().classList.remove('hidden');
     setLanguageStatus('');
     $('#status-line').textContent = '';
-  }
 
-  function syncScroll() {
-    const ta = textarea();
-    highlight().scrollTop = ta.scrollTop;
-    highlight().scrollLeft = ta.scrollLeft;
-    lineNums().scrollTop = ta.scrollTop;
-  }
-
-  function updateCursorPos() {
-    const ta = textarea();
-    const val = ta.value.substring(0, ta.selectionStart);
-    const lines = val.split('\n');
-    const ln = lines.length;
-    const col = lines[lines.length - 1].length + 1;
-    $('#status-line').textContent = `Ln ${ln}, Col ${col}`;
-  }
-
-  /* ── Line numbers ───────────────────────────────────────────────────── */
-
-  function updateLineNumbers(content) {
-    const count = content.split('\n').length;
-    const nums = lineNums();
-    let html = '';
-    for (let i = 1; i <= count; i++) {
-      html += i + '\n';
+    if (textarea()) textarea().value = '';
+    if (monacoEditor) {
+      monacoEditor.setValue('');
     }
-    nums.textContent = html;
   }
 
-  /* ── Syntax highlighting (basic) ────────────────────────────────────── */
-
-  function updateHighlight(code, name) {
-    const ext = getExt(name);
-    const hl = highlight();
-
-    // Escape HTML
-    let html = code
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // Apply language-specific coloring
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
-      html = highlightJS(html);
-    } else if (ext === '.py') {
-      html = highlightPy(html);
-    } else if (['.c', '.cpp', '.h', '.hpp', '.java'].includes(ext)) {
-      html = highlightC(html);
-    } else if (ext === '.html') {
-      html = highlightHTML(html);
-    } else if (ext === '.css' || ext === '.scss') {
-      html = highlightCSS(html);
-    } else if (ext === '.json') {
-      html = highlightJSON(html);
+  function clearCurrentEditor() {
+    if (monacoEditor) {
+      monacoEditor.setValue('');
     }
-
-    hl.innerHTML = html + '\n'; // trailing newline for height
+    if (textarea()) textarea().value = '';
   }
-
-  // Minimal keyword-based highlighting
-
-  function highlightJS(html) {
-    // Comments
-    html = html.replace(/(\/\/.*)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(\/\*[\s\S]*?\*\/)/g, '<span style="color:#6a9955">$1</span>');
-    // Strings
-    html = html.replace(/(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;|`[^`]*?`)/g, '<span style="color:#ce9178">$1</span>');
-    // Keywords
-    const kw = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|import|export|from|default|new|this|async|await|try|catch|throw|typeof|instanceof|in|of|true|false|null|undefined|void)\b/g;
-    html = html.replace(kw, '<span style="color:#569cd6">$1</span>');
-    // Numbers
-    html = html.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#b5cea8">$1</span>');
-    return html;
-  }
-
-  function highlightPy(html) {
-    html = html.replace(/(#.*)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(&#39;&#39;&#39;[\s\S]*?&#39;&#39;&#39;|&quot;&quot;&quot;[\s\S]*?&quot;&quot;&quot;)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;)/g, '<span style="color:#ce9178">$1</span>');
-    const kw = /\b(def|class|return|if|elif|else|for|while|import|from|as|try|except|finally|raise|with|yield|lambda|and|or|not|is|in|True|False|None|pass|break|continue|global|nonlocal|assert|del|print|self)\b/g;
-    html = html.replace(kw, '<span style="color:#569cd6">$1</span>');
-    html = html.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#b5cea8">$1</span>');
-    return html;
-  }
-
-  function highlightC(html) {
-    html = html.replace(/(\/\/.*)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(\/\*[\s\S]*?\*\/)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;)/g, '<span style="color:#ce9178">$1</span>');
-    const kw = /\b(int|float|double|char|void|long|short|unsigned|signed|struct|enum|union|typedef|const|static|extern|return|if|else|for|while|do|switch|case|break|continue|sizeof|include|define|ifndef|endif|class|public|private|protected|virtual|override|template|namespace|using|new|delete|try|catch|throw|string|bool|true|false|null|nullptr|auto|System|out|println|main|import|package)\b/g;
-    html = html.replace(kw, '<span style="color:#569cd6">$1</span>');
-    html = html.replace(/(#\w+)/g, '<span style="color:#c586c0">$1</span>');
-    html = html.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#b5cea8">$1</span>');
-    return html;
-  }
-
-  function highlightHTML(html) {
-    html = html.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/(&lt;\/?)([\w-]+)/g, '<span style="color:#808080">$1</span><span style="color:#569cd6">$2</span>');
-    html = html.replace(/([\w-]+)(=)/g, '<span style="color:#9cdcfe">$1</span>$2');
-    html = html.replace(/(=)(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;)/g, '$1<span style="color:#ce9178">$2</span>');
-    return html;
-  }
-
-  function highlightCSS(html) {
-    html = html.replace(/(\/\*[\s\S]*?\*\/)/g, '<span style="color:#6a9955">$1</span>');
-    html = html.replace(/([\w-]+)\s*:/g, '<span style="color:#9cdcfe">$1</span>:');
-    html = html.replace(/(#[\da-fA-F]{3,8})\b/g, '<span style="color:#ce9178">$1</span>');
-    html = html.replace(/\b(\d+\.?\d*(px|em|rem|%|vh|vw|s|ms)?)\b/g, '<span style="color:#b5cea8">$1</span>');
-    return html;
-  }
-
-  function highlightJSON(html) {
-    html = html.replace(/(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;)\s*:/g, '<span style="color:#9cdcfe">$1</span>:');
-    html = html.replace(/:\s*(&#39;[^&#]*?&#39;|&quot;[^&]*?&quot;)/g, ': <span style="color:#ce9178">$1</span>');
-    html = html.replace(/\b(true|false|null)\b/g, '<span style="color:#569cd6">$1</span>');
-    html = html.replace(/\b(\d+\.?\d*)\b/g, '<span style="color:#b5cea8">$1</span>');
-    return html;
-  }
-
-  /* ── Save ────────────────────────────────────────────────────────────── */
 
   async function save() {
     if (IDE.activeTab === null) return;
     const tab = IDE.openTabs[IDE.activeTab];
-    tab.content = textarea().value;
+    tab.content = getCurrentContent();
 
     try {
       await invoke('write_file', { filePath: tab.path, content: tab.content });
@@ -281,12 +318,17 @@ const Editor = (() => {
     }
   }
 
-  /* ── Public API ─────────────────────────────────────────────────────── */
-
-  return { openFile, switchTab, closeTab, save, renderTabs };
+  return {
+    openFile,
+    switchTab,
+    closeTab,
+    save,
+    renderTabs,
+    getCurrentContent,
+    clearCurrentEditor,
+  };
 })();
 
-// Wire up save button
 document.addEventListener('DOMContentLoaded', () => {
   $('#btn-save').addEventListener('click', () => Editor.save());
 });

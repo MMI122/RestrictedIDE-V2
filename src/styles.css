@@ -461,6 +461,26 @@ button {
   overflow: auto;
 }
 
+#monaco-editor {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+#editor-container.monaco-mode #line-numbers,
+#editor-container.monaco-mode #syntax-highlight,
+#editor-container.monaco-mode #code-editor {
+  display: none;
+}
+
+#editor-container.monaco-mode #editor-wrapper {
+  left: 0;
+}
+
+#editor-container.monaco-mode #monaco-editor {
+  display: block;
+}
+
 #syntax-highlight, #code-editor {
   font-family: var(--font-mono);
   font-size: 14px;
