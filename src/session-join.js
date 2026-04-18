@@ -57,7 +57,9 @@ const JoinSession = (() => {
 
     const sec = getSessionSecurity();
     const mode = normalizeSecurityMode(sec.security_mode);
-    if (mode === 'monitor') return;
+    // Lockdown mode relies on proactive blocking (keyboard/process controls)
+    // and should not enforce focus-loss auto-submit.
+    if (mode === 'monitor' || mode === 'lockdown') return;
 
     const threshold = (mode === 'ultra' || mode === 'lockdown') ? 1 : getFocusThreshold();
     if (consecutiveLosses < threshold) return;
@@ -821,6 +823,7 @@ const JoinSession = (() => {
     try {
       const sec = getSessionSecurity();
       const mode = normalizeSecurityMode(sec.security_mode);
+      let envReady = true;
 
       if (mode === 'lockdown') {
         const envStatus = await invoke('get_lockdown_environment_status_cmd').catch((e) => {
@@ -828,8 +831,9 @@ const JoinSession = (() => {
           return null;
         });
 
-        if (!envStatus?.ready) {
-          appendOutput('error', '⛔ Lockdown environment is not active on this machine.');
+        envReady = !!envStatus?.ready;
+        if (!envReady) {
+          appendOutput('info', '⚠ Lockdown environment shell is not active. Applying app-level lockdown protections only.');
           const shouldPrepare = confirm('Lockdown environment is inactive. Prepare it now with admin elevation?');
           if (shouldPrepare) {
             const prep = await invoke('prepare_lockdown_environment_cmd').catch((e) => {
@@ -843,7 +847,6 @@ const JoinSession = (() => {
               alert('Failed to prepare lockdown environment: ' + (prep?.message || 'unknown error'));
             }
           }
-          return false;
         }
       }
 
@@ -852,7 +855,7 @@ const JoinSession = (() => {
         policy: {
           security_mode: sec.security_mode || 'monitor',
           prevent_screenshots: !!sec.prevent_screenshots,
-          focus_watchdog: !!sec.focus_watchdog,
+          focus_watchdog: mode === 'lockdown' ? false : !!sec.focus_watchdog,
           controlled_paste: !!sec.controlled_paste,
         },
       });
@@ -861,6 +864,11 @@ const JoinSession = (() => {
         console.warn('Kiosk activation skipped:', resp.message || 'unknown reason');
         return false;
       }
+
+      if (mode === 'lockdown' && !envReady) {
+        appendOutput('info', 'Lockdown started without exam-shell OS hardening. For strongest lockdown, relaunch via exam-shell.');
+      }
+
       return true;
     } catch (err) {
       console.error('Kiosk activation error:', err);

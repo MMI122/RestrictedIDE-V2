@@ -165,7 +165,7 @@ pub fn prepare_lockdown_environment_cmd() -> serde_json::Value {
         let escaped_script = script_path.display().to_string().replace('"', "\"\"");
         let escaped_app = app_path.replace('"', "\"\"");
         let cmd = format!(
-            "Start-Process -FilePath powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"{}\" -AppPath \"{}\"' -Wait",
+            "Start-Process -FilePath powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"{}\" -AppPath \"{}\" -ApplyMachineWidePolicies' -Wait",
             escaped_script, escaped_app
         );
 
