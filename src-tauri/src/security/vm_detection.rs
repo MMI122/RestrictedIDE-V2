@@ -133,17 +133,54 @@ fn check_wmi_indicators(indicators: &mut Vec<String>) {
         }
     }
 
-    // Check BIOS serial (some VMs have distinctive serials)
+    // Check BIOS serial (some VMs expose placeholder or vendor-branded serials).
     if let Some(serial) = wmic_value("bios", "serialnumber") {
-        let lower = serial.to_lowercase();
-        let vm_serials = ["vmware", "virtualbox", "parallels", "0", "none"];
-        for pattern in &vm_serials {
-            if lower.contains(pattern) {
-                indicators.push(format!("WMI BIOS serial: {}", serial.trim()));
-                break;
-            }
+        if is_suspicious_bios_serial(&serial) {
+            indicators.push(format!("WMI BIOS serial: {}", serial.trim()));
         }
     }
+}
+
+/// Returns true when BIOS serial strongly suggests a VM / synthetic environment.
+fn is_suspicious_bios_serial(serial: &str) -> bool {
+    let lower = serial.trim().to_lowercase();
+
+    // Keep explicit VM vendor markers as substring checks.
+    let vm_vendor_markers = ["vmware", "virtualbox", "parallels", "qemu", "xen"];
+    if vm_vendor_markers.iter().any(|m| lower.contains(m)) {
+        return true;
+    }
+
+    // Avoid broad substring rules like "contains('0')" to prevent false positives
+    // on normal physical serials that include digits.
+    let normalized = lower
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>();
+
+    if normalized.is_empty() {
+        return true;
+    }
+
+    let placeholder_exact = [
+        "0",
+        "none",
+        "unknown",
+        "systemserialnumber",
+        "defaultstring",
+        "tobefilledbyoem",
+        "oem",
+    ];
+    if placeholder_exact.iter().any(|p| normalized == *p) {
+        return true;
+    }
+
+    // Common synthetic placeholders.
+    if normalized == "0123456789" || normalized.chars().all(|c| c == '0') {
+        return true;
+    }
+
+    false
 }
 
 /// Run `wmic <alias> get <property>` and return the value line.
