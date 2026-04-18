@@ -2,6 +2,7 @@
 
 use crate::AppState;
 use crate::commands::session_commands::{SessionRole, SessionState};
+use std::path::PathBuf;
 use tauri::{Manager, State};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -74,6 +75,131 @@ pub struct SecurityStatus {
     pub is_blocked: bool,
 }
 
+fn guess_project_root() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+
+    // Common dev shape: <repo>/src-tauri/target/debug/restricted-ide.exe
+    let dev_candidate = exe
+        .parent()?
+        .parent()?
+        .parent()? // .../src-tauri
+        .parent()? // .../<repo>
+        .to_path_buf();
+    if dev_candidate.join("scripts").join("windows").exists() {
+        return Some(dev_candidate);
+    }
+
+    // Fallback to current working directory
+    let cwd = std::env::current_dir().ok()?;
+    if cwd.join("scripts").join("windows").exists() {
+        return Some(cwd);
+    }
+
+    None
+}
+
+#[tauri::command]
+pub fn get_lockdown_environment_status_cmd() -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        let has_kiosk = args.iter().any(|a| a == "--kiosk");
+        let has_exam_shell = args.iter().any(|a| a == "--exam-shell");
+        let ready = has_kiosk && has_exam_shell;
+
+        return serde_json::json!({
+            "success": true,
+            "platform": "windows",
+            "ready": ready,
+            "has_kiosk_flag": has_kiosk,
+            "has_exam_shell_flag": has_exam_shell,
+            "message": if ready {
+                "Lockdown environment active"
+            } else {
+                "Lockdown environment not active (requires --kiosk --exam-shell launch)"
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        serde_json::json!({
+            "success": true,
+            "platform": std::env::consts::OS,
+            "ready": false,
+            "message": "Lockdown environment helper currently implemented for Windows only"
+        })
+    }
+}
+
+#[tauri::command]
+pub fn prepare_lockdown_environment_cmd() -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        let project_root = match guess_project_root() {
+            Some(p) => p,
+            None => {
+                return serde_json::json!({
+                    "success": false,
+                    "message": "Could not resolve project root for lockdown helper scripts"
+                });
+            }
+        };
+
+        let script_path = project_root
+            .join("scripts")
+            .join("windows")
+            .join("enable-exam-shell.ps1");
+        if !script_path.exists() {
+            return serde_json::json!({
+                "success": false,
+                "message": format!("Lockdown helper script not found: {}", script_path.display())
+            });
+        }
+
+        let app_path = std::env::current_exe()
+            .ok()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+
+        let escaped_script = script_path.display().to_string().replace('"', "\"\"");
+        let escaped_app = app_path.replace('"', "\"\"");
+        let cmd = format!(
+            "Start-Process -FilePath powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"{}\" -AppPath \"{}\"' -Wait",
+            escaped_script, escaped_app
+        );
+
+        let status = std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(cmd)
+            .status();
+
+        return match status {
+            Ok(s) if s.success() => serde_json::json!({
+                "success": true,
+                "message": "Lockdown environment helper executed. Sign in as RestrictedExam and relaunch exam app."
+            }),
+            Ok(s) => serde_json::json!({
+                "success": false,
+                "message": format!("Lockdown helper exited with status: {}", s)
+            }),
+            Err(e) => serde_json::json!({
+                "success": false,
+                "message": format!("Failed to launch lockdown helper: {}", e)
+            }),
+        };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        serde_json::json!({
+            "success": false,
+            "message": "Lockdown environment helper is only available on Windows"
+        })
+    }
+}
+
 /// Enable or disable kiosk mode lockdown.
 #[tauri::command]
 pub fn set_kiosk_mode(
@@ -106,21 +232,23 @@ pub fn set_kiosk_mode(
         .unwrap_or_else(|| "monitor".to_string())
         .to_lowercase();
     let is_ultra = security_mode == "ultra";
+    let is_lockdown = security_mode == "lockdown";
+    let hard_lock_mode = is_ultra || is_lockdown;
     let effective_prevent_screenshots = policy
         .as_ref()
         .and_then(|p| p.prevent_screenshots)
-        .unwrap_or(if is_ultra { true } else { cfg.security.screenshot_prevention });
+        .unwrap_or(if hard_lock_mode { true } else { cfg.security.screenshot_prevention });
     let effective_focus_watchdog = policy
         .as_ref()
         .and_then(|p| p.focus_watchdog)
-        .unwrap_or(if is_ultra { true } else { cfg.security.focus_watchdog });
+        .unwrap_or(if hard_lock_mode { true } else { cfg.security.focus_watchdog });
     let effective_controlled_paste = policy
         .as_ref()
         .and_then(|p| p.controlled_paste)
-        .unwrap_or(!is_ultra);
+        .unwrap_or(!hard_lock_mode);
 
     let mut blocked_combinations = cfg.input_control.blocked_combinations.clone();
-    if is_ultra {
+    if hard_lock_mode {
         blocked_combinations.extend([
             vec!["ctrl".to_string(), "c".to_string()],
             vec!["ctrl".to_string(), "v".to_string()],
@@ -136,6 +264,25 @@ pub fn set_kiosk_mode(
             crate::security::keyboard_hook::start_keyboard_hook(
                 blocked_combinations,
             );
+
+            if hard_lock_mode {
+                // Wait briefly for hook installation to complete on the hook thread.
+                for _ in 0..20 {
+                    if crate::security::keyboard_hook::is_keyboard_hook_installed() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+
+                if !crate::security::keyboard_hook::is_keyboard_hook_installed() {
+                    log::error!("[Security] Hard-lock mode requested but keyboard hook is not installed");
+                    return serde_json::json!({
+                        "success": false,
+                        "message": "Hard-lock protections failed to activate (keyboard hook unavailable)"
+                    });
+                }
+            }
+
             crate::security::process_monitor::start_process_monitor(
                 cfg.process_control.blacklist.clone(),
                 cfg.process_control.monitor_interval_ms,
@@ -164,7 +311,7 @@ pub fn set_kiosk_mode(
             }
 
             if let Some(win) = app.get_webview_window("main") {
-                if is_ultra {
+                if hard_lock_mode {
                     let _ = win.set_decorations(false);
                     let _ = win.set_resizable(false);
                     let _ = win.set_always_on_top(true);

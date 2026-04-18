@@ -977,6 +977,24 @@ button {
   height: 16px;
 }
 
+#lockdown-options {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(197, 134, 192, 0.07);
+}
+
+#lockdown-options .form-row:first-of-type {
+  margin-top: 0;
+}
+
+.lockdown-help {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .form-error {
   padding: 10px 14px;
   background: #f4474720;

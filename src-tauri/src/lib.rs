@@ -95,6 +95,21 @@ pub fn run() {
                     return;
                 }
 
+                let security_mode = session_state
+                    .db
+                    .get_session_by_id(&session_id)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.options.security_mode.to_lowercase())
+                    .unwrap_or_else(|| "monitor".to_string());
+
+                if security_mode == "lockdown" {
+                    // Prevention-first lockdown behavior: block close attempts silently.
+                    api.prevent_close();
+                    log::warn!("[Security] Close attempt blocked silently in lockdown mode");
+                    return;
+                }
+
                 api.prevent_close();
 
                 let student_id = session_state.current_student_id.lock().unwrap().clone();
@@ -154,6 +169,8 @@ pub fn run() {
             commands::security_commands::check_monitors,
             commands::security_commands::get_security_status,
             commands::security_commands::set_kiosk_mode,
+            commands::security_commands::get_lockdown_environment_status_cmd,
+            commands::security_commands::prepare_lockdown_environment_cmd,
             // Session
             commands::session_commands::create_session_cmd,
             commands::session_commands::start_session_cmd,
@@ -176,6 +193,7 @@ pub fn run() {
             commands::session_commands::kick_participant_cmd,
             commands::session_commands::permit_reentry_cmd,
             commands::session_commands::report_violation_cmd,
+            commands::session_commands::unlock_lockdown_cmd,
             commands::session_commands::stop_lan_server_cmd,
             commands::session_commands::get_current_role_cmd,
             commands::session_commands::set_runtime_role_cmd,

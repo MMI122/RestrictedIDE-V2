@@ -33,11 +33,13 @@ const JoinSession = (() => {
       focus_watchdog: true,
       controlled_paste: true,
       focus_auto_submit_threshold: 3,
+      lockdown_emergency_unlock: false,
     };
   }
 
   function normalizeSecurityMode(mode) {
     const m = String(mode || 'monitor').toLowerCase();
+    if (m === 'lockdown') return 'lockdown';
     if (m === 'ultra') return 'ultra';
     if (m === 'strict') return 'strict';
     return 'monitor';
@@ -57,13 +59,15 @@ const JoinSession = (() => {
     const mode = normalizeSecurityMode(sec.security_mode);
     if (mode === 'monitor') return;
 
-    const threshold = mode === 'ultra' ? 1 : getFocusThreshold();
+    const threshold = (mode === 'ultra' || mode === 'lockdown') ? 1 : getFocusThreshold();
     if (consecutiveLosses < threshold) return;
 
     focusEnforcementTriggered = true;
     appendOutput('error', mode === 'ultra'
       ? '⛔ Ultra strict: focus loss detected. Auto-submitting immediately.'
-      : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
+      : mode === 'lockdown'
+        ? '⛔ Lockdown mode: focus loss detected. Auto-submitting immediately.'
+        : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
 
     try {
       await invoke('set_kiosk_mode', { enabled: false });
@@ -176,12 +180,18 @@ const JoinSession = (() => {
     }
   }
 
-  function beginStudentSession(statusResp) {
+  async function beginStudentSession(statusResp) {
     if (studentSessionStarted) return;
     studentSessionStarted = true;
     stopWaitForStart();
 
-    activateKioskMode();
+    const kioskReady = await activateKioskMode();
+    const mode = normalizeSecurityMode(getSessionSecurity().security_mode);
+    if (mode === 'lockdown' && !kioskReady) {
+      studentSessionStarted = false;
+      showError('Lockdown protections failed to activate on this machine. Cannot start session safely.');
+      return;
+    }
 
     hideStatus();
     Session.enterStudentSession();
@@ -226,7 +236,9 @@ const JoinSession = (() => {
         const statusResp = await fetchSessionStatus();
         const status = normalizeSessionStatus(statusResp?.session?.status);
         if (status === 'active') {
-          beginStudentSession(statusResp);
+          beginStudentSession(statusResp).catch((e) => {
+            console.warn('Failed to begin student session:', e);
+          });
         } else if (status === 'ended') {
           stopWaitForStart();
           showError('This session has already ended.');
@@ -685,6 +697,7 @@ const JoinSession = (() => {
           focus_watchdog: result.options?.focus_watchdog ?? true,
           controlled_paste: result.options?.controlled_paste ?? true,
           focus_auto_submit_threshold: result.options?.focus_auto_submit_threshold ?? 3,
+          lockdown_emergency_unlock: result.options?.lockdown_emergency_unlock ?? false,
         },
         server: server,
         studentId: studentId,
@@ -720,7 +733,9 @@ const JoinSession = (() => {
           .then((statusResp) => {
             const status = normalizeSessionStatus(statusResp?.session?.status);
             if (status === 'active') {
-              beginStudentSession(statusResp);
+              beginStudentSession(statusResp).catch((e) => {
+                console.warn('Failed to begin student session:', e);
+              });
             } else if (status === 'ended') {
               showError('This session has already ended.');
             } else {
@@ -805,6 +820,33 @@ const JoinSession = (() => {
     // Activate kiosk lockdown on join (keyboard hooks, process monitoring, etc.)
     try {
       const sec = getSessionSecurity();
+      const mode = normalizeSecurityMode(sec.security_mode);
+
+      if (mode === 'lockdown') {
+        const envStatus = await invoke('get_lockdown_environment_status_cmd').catch((e) => {
+          console.warn('Lockdown environment status check failed:', e);
+          return null;
+        });
+
+        if (!envStatus?.ready) {
+          appendOutput('error', '⛔ Lockdown environment is not active on this machine.');
+          const shouldPrepare = confirm('Lockdown environment is inactive. Prepare it now with admin elevation?');
+          if (shouldPrepare) {
+            const prep = await invoke('prepare_lockdown_environment_cmd').catch((e) => {
+              console.warn('Lockdown environment preparation failed:', e);
+              return { success: false, message: String(e) };
+            });
+
+            if (prep?.success) {
+              alert('Lockdown environment helper finished. Sign in to the RestrictedExam user and relaunch for strict lockdown mode.');
+            } else {
+              alert('Failed to prepare lockdown environment: ' + (prep?.message || 'unknown error'));
+            }
+          }
+          return false;
+        }
+      }
+
       const resp = await invoke('set_kiosk_mode', {
         enabled: true,
         policy: {
@@ -817,9 +859,12 @@ const JoinSession = (() => {
 
       if (resp && resp.success === false) {
         console.warn('Kiosk activation skipped:', resp.message || 'unknown reason');
+        return false;
       }
+      return true;
     } catch (err) {
       console.error('Kiosk activation error:', err);
+      return false;
     }
   }
 
