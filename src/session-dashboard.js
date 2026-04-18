@@ -14,6 +14,8 @@ const Dashboard = (() => {
   let latestViolations = [];
   let latestBroadcasts = [];
   let latestBroadcastReceipts = [];
+  let previousReentryPendingCount = 0;
+  let reentryBlinkTimer = null;
 
   function init() {
     $('#btn-start-session')?.addEventListener('click', handleStartSession);
@@ -54,12 +56,19 @@ const Dashboard = (() => {
     $('#dash-last-refresh').textContent = '--';
     $('#dash-broadcast-count').textContent = '0';
     $('#dash-violation-feed-count').textContent = '0';
+    $('#dash-reentry-count').textContent = '0';
     latestBroadcasts = [];
     latestBroadcastReceipts = [];
+    previousReentryPendingCount = 0;
+    if (reentryBlinkTimer) {
+      clearTimeout(reentryBlinkTimer);
+      reentryBlinkTimer = null;
+    }
     selectedStudentId = null;
     renderParticipantDetail();
     renderViolationFeed();
     renderBroadcastHistory();
+    renderReentryRequests([]);
 
     // Show start button, hide end button and review button
     const startBtn = $('#btn-start-session');
@@ -113,6 +122,7 @@ const Dashboard = (() => {
 
       updateSessionStatus(status);
       renderParticipants(latestParticipants);
+      renderReentryRequests(latestParticipants);
       renderLiveMetrics(latestSubmissions, latestViolations);
       renderParticipantDetail();
       renderViolationFeed();
@@ -192,6 +202,8 @@ const Dashboard = (() => {
       const state = p.state || 'Joined';
       const dotClass = getParticipantDotClass(state);
       const selectedClass = selectedStudentId === p.student_id ? ' selected' : '';
+      const normalizedState = String(state || '').toLowerCase();
+      const needsPermit = normalizedState === 'kicked' || normalizedState === 'reentry_pending';
       return `
         <div class="participant-row${selectedClass}" data-id="${p.id}" data-student-id="${escapeHtml(p.student_id)}">
           <div class="participant-info">
@@ -201,7 +213,7 @@ const Dashboard = (() => {
           </div>
           <div>
             <span class="status-badge ${dotClass}" style="font-size:10px;">${state}</span>
-            ${state !== 'kicked'
+            ${!needsPermit
               ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${escapeHtml(p.student_id)}')">Kick</button>`
               : `<button class="kick-btn permit" onclick="Dashboard.permitReentry('${escapeHtml(p.student_id)}')">Permit Re-entry</button>`}
           </div>
@@ -221,6 +233,64 @@ const Dashboard = (() => {
       selectedStudentId = null;
       renderParticipantDetail();
     }
+  }
+
+  function renderReentryRequests(participants) {
+    const countEl = $('#dash-reentry-count');
+    const listEl = $('#reentry-request-list');
+    if (!listEl) return;
+
+    const pending = (participants || []).filter(
+      (p) => String(p.state || '').toLowerCase() === 'reentry_pending',
+    );
+
+    if (countEl) countEl.textContent = String(pending.length);
+    updateReentryAlert(pending.length);
+
+    if (pending.length === 0) {
+      listEl.innerHTML = '<div class="reentry-request-empty">No pending re-entry requests.</div>';
+      return;
+    }
+
+    listEl.innerHTML = pending.map((p) => `
+      <div class="reentry-request-row">
+        <div class="reentry-request-info">
+          <span class="reentry-student-name">${escapeHtml(p.display_name || p.student_id)}</span>
+          <span class="reentry-student-id">${escapeHtml(p.student_id)}</span>
+        </div>
+        <button class="kick-btn permit" onclick="Dashboard.permitReentry('${escapeHtml(p.student_id)}')">Approve Re-entry</button>
+      </div>
+    `).join('');
+  }
+
+  function updateReentryAlert(pendingCount) {
+    const badge = $('#dash-reentry-alert');
+    if (!badge) return;
+
+    if (pendingCount <= 0) {
+      badge.classList.add('hidden');
+      badge.classList.remove('blink');
+      previousReentryPendingCount = 0;
+      if (reentryBlinkTimer) {
+        clearTimeout(reentryBlinkTimer);
+        reentryBlinkTimer = null;
+      }
+      return;
+    }
+
+    badge.classList.remove('hidden');
+    badge.textContent = `Re-entry requests: ${pendingCount}`;
+
+    if (pendingCount > previousReentryPendingCount) {
+      badge.classList.add('blink');
+      if (reentryBlinkTimer) clearTimeout(reentryBlinkTimer);
+      reentryBlinkTimer = setTimeout(() => {
+        badge.classList.remove('blink');
+        reentryBlinkTimer = null;
+      }, 10000);
+    }
+
+    previousReentryPendingCount = pendingCount;
   }
 
   function renderParticipantDetail() {
@@ -296,6 +366,7 @@ const Dashboard = (() => {
       case 'active':       return 'online';
       case 'joined':       return 'online';
       case 'submitted':    return 'submitted';
+      case 'reentry_pending': return 'disconnected';
       case 'disconnected': return 'disconnected';
       case 'kicked':       return 'kicked';
       default:             return 'online';
@@ -558,6 +629,7 @@ const Dashboard = (() => {
         studentId: participantId,
       });
       appendOutput('info', `✅ Permit re-entry granted for ${participantId}`);
+      await refreshDashboardData(Session.sessionData.id);
     } catch (err) {
       console.error('Permit re-entry error:', err);
       alert('Failed to permit re-entry: ' + (err.message || err));
