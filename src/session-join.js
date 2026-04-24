@@ -175,6 +175,9 @@ const JoinSession = (() => {
 
     if (editorContainer) editorContainer.style.display = 'none';
     if (welcome) welcome.classList.remove('hidden');
+    if (typeof Editor?.clearCurrentEditor === 'function') {
+      Editor.clearCurrentEditor();
+    }
     if (codeEditor) codeEditor.value = '';
     if (syntax) syntax.textContent = '';
     if (lines) lines.textContent = '1\n';

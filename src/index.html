@@ -635,6 +635,7 @@
       <div id="editor-container">
         <div id="line-numbers"></div>
         <div id="editor-wrapper">
+          <div id="monaco-editor" aria-label="Code Editor"></div>
           <pre id="syntax-highlight" aria-hidden="true"></pre>
           <textarea id="code-editor"
                     spellcheck="false"
@@ -712,6 +713,7 @@
   </div>
 
   <!-- ═══════════ SCRIPTS ═══════════ -->
+  <script src="vendor/vs/loader.js"></script>
   <script src="app.js"></script>
   <script src="editor.js"></script>
   <script src="file-tree.js"></script>

@@ -43,7 +43,9 @@ const SubmitFlow = (() => {
     if (filesToSubmit.length === 0) {
       filesToSubmit.push({
         filename: IDE.openTabs?.[IDE.activeTab]?.name || 'untitled.txt',
-        content: $('#code-editor')?.value || '',
+        content: (typeof Editor?.getCurrentContent === 'function'
+          ? Editor.getCurrentContent()
+          : ($('#code-editor')?.value || '')),
       });
     }
 
