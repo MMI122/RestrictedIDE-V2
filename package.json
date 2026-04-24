@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "monaco-editor": "^0.55.1"
   }
 }

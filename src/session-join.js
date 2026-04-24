@@ -18,6 +18,28 @@ const JoinSession = (() => {
   let adminEndHandled = false;
   let focusEnforcementTriggered = false;
 
+  let cachedDeviceId = null;
+
+  async function getDeviceId() {
+    if (cachedDeviceId) return cachedDeviceId;
+    try {
+      const info = await invoke('get_system_info');
+      const fp = String(info?.device_fingerprint || '').trim().toLowerCase();
+      if (fp) {
+        cachedDeviceId = fp;
+      } else {
+        const platform = String(info?.platform || 'unknown').toLowerCase();
+        const arch = String(info?.arch || 'unknown').toLowerCase();
+        const host = String(info?.hostname || 'unknown').toLowerCase();
+        cachedDeviceId = `${platform}:${arch}:${host}`;
+      }
+    } catch (e) {
+      console.warn('Failed to read system info for device ID:', e);
+      cachedDeviceId = 'unknown-device';
+    }
+    return cachedDeviceId;
+  }
+
   function getDisconnectGraceSeconds() {
     const v = Number(Session.sessionData?.disconnectGraceSeconds);
     if (!Number.isFinite(v)) return DEFAULT_DISCONNECT_GRACE_SECONDS;
@@ -33,11 +55,13 @@ const JoinSession = (() => {
       focus_watchdog: true,
       controlled_paste: true,
       focus_auto_submit_threshold: 3,
+      lockdown_emergency_unlock: false,
     };
   }
 
   function normalizeSecurityMode(mode) {
     const m = String(mode || 'monitor').toLowerCase();
+    if (m === 'lockdown') return 'lockdown';
     if (m === 'ultra') return 'ultra';
     if (m === 'strict') return 'strict';
     return 'monitor';
@@ -55,15 +79,19 @@ const JoinSession = (() => {
 
     const sec = getSessionSecurity();
     const mode = normalizeSecurityMode(sec.security_mode);
-    if (mode === 'monitor') return;
+    // Lockdown mode relies on proactive blocking (keyboard/process controls)
+    // and should not enforce focus-loss auto-submit.
+    if (mode === 'monitor' || mode === 'lockdown') return;
 
-    const threshold = mode === 'ultra' ? 1 : getFocusThreshold();
+    const threshold = (mode === 'ultra' || mode === 'lockdown') ? 1 : getFocusThreshold();
     if (consecutiveLosses < threshold) return;
 
     focusEnforcementTriggered = true;
     appendOutput('error', mode === 'ultra'
       ? '⛔ Ultra strict: focus loss detected. Auto-submitting immediately.'
-      : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
+      : mode === 'lockdown'
+        ? '⛔ Lockdown mode: focus loss detected. Auto-submitting immediately.'
+        : `⛔ Strict mode: focus-loss threshold reached (${threshold}). Auto-submitting.`);
 
     try {
       await invoke('set_kiosk_mode', { enabled: false });
@@ -147,6 +175,9 @@ const JoinSession = (() => {
 
     if (editorContainer) editorContainer.style.display = 'none';
     if (welcome) welcome.classList.remove('hidden');
+    if (typeof Editor?.clearCurrentEditor === 'function') {
+      Editor.clearCurrentEditor();
+    }
     if (codeEditor) codeEditor.value = '';
     if (syntax) syntax.textContent = '';
     if (lines) lines.textContent = '1\n';
@@ -176,12 +207,18 @@ const JoinSession = (() => {
     }
   }
 
-  function beginStudentSession(statusResp) {
+  async function beginStudentSession(statusResp) {
     if (studentSessionStarted) return;
     studentSessionStarted = true;
     stopWaitForStart();
 
-    activateKioskMode();
+    const kioskReady = await activateKioskMode();
+    const mode = normalizeSecurityMode(getSessionSecurity().security_mode);
+    if (mode === 'lockdown' && !kioskReady) {
+      studentSessionStarted = false;
+      showError('Lockdown protections failed to activate on this machine. Cannot start session safely.');
+      return;
+    }
 
     hideStatus();
     Session.enterStudentSession();
@@ -226,7 +263,9 @@ const JoinSession = (() => {
         const statusResp = await fetchSessionStatus();
         const status = normalizeSessionStatus(statusResp?.session?.status);
         if (status === 'active') {
-          beginStudentSession(statusResp);
+          beginStudentSession(statusResp).catch((e) => {
+            console.warn('Failed to begin student session:', e);
+          });
         } else if (status === 'ended') {
           stopWaitForStart();
           showError('This session has already ended.');
@@ -480,6 +519,7 @@ const JoinSession = (() => {
           Session.sessionData.code,
           Session.sessionData.studentId,
           Session.sessionData.displayName || Session.sessionData.studentId,
+          Session.sessionData.deviceId || await getDeviceId(),
         );
       } else {
         await invoke('join_session_cmd', {
@@ -487,6 +527,7 @@ const JoinSession = (() => {
           code: Session.sessionData.code,
           studentId: Session.sessionData.studentId,
           displayName: Session.sessionData.displayName,
+          deviceId: Session.sessionData.deviceId || await getDeviceId(),
         });
       }
 
@@ -542,12 +583,13 @@ const JoinSession = (() => {
     return addr !== 'localhost' && addr !== '127.0.0.1';
   }
 
-  async function joinViaHttp(server, code, studentId, displayName) {
+  async function joinViaHttp(server, code, studentId, displayName, deviceId) {
     // Join via HTTP request to remote LAN server
     const url = `http://${server}/api/session/${code}/join`;
     const payload = {
       student_id: studentId,
       display_name: displayName,
+      device_id: deviceId,
     };
 
     const response = await fetch(url, {
@@ -648,11 +690,12 @@ const JoinSession = (() => {
       showStatus('Connecting to server...');
 
       let result;
+      const deviceId = await getDeviceId();
       
       if (isRemote) {
         // Join via HTTP to remote LAN server
         showStatus('Joining remote session...');
-        result = await joinViaHttp(server, code, studentId, displayName);
+        result = await joinViaHttp(server, code, studentId, displayName, deviceId);
       } else {
         // Local IPC join (for development)
         result = await invoke('join_session_cmd', {
@@ -660,6 +703,7 @@ const JoinSession = (() => {
           code: code,
           studentId: studentId,
           displayName: displayName,
+          deviceId: deviceId,
         });
       }
 
@@ -685,10 +729,12 @@ const JoinSession = (() => {
           focus_watchdog: result.options?.focus_watchdog ?? true,
           controlled_paste: result.options?.controlled_paste ?? true,
           focus_auto_submit_threshold: result.options?.focus_auto_submit_threshold ?? 3,
+          lockdown_emergency_unlock: result.options?.lockdown_emergency_unlock ?? false,
         },
         server: server,
         studentId: studentId,
         displayName: displayName,
+        deviceId: deviceId,
         language: null,
       };
       Session.role = 'student';
@@ -720,7 +766,9 @@ const JoinSession = (() => {
           .then((statusResp) => {
             const status = normalizeSessionStatus(statusResp?.session?.status);
             if (status === 'active') {
-              beginStudentSession(statusResp);
+              beginStudentSession(statusResp).catch((e) => {
+                console.warn('Failed to begin student session:', e);
+              });
             } else if (status === 'ended') {
               showError('This session has already ended.');
             } else {
@@ -805,21 +853,57 @@ const JoinSession = (() => {
     // Activate kiosk lockdown on join (keyboard hooks, process monitoring, etc.)
     try {
       const sec = getSessionSecurity();
+      const mode = normalizeSecurityMode(sec.security_mode);
+      let envReady = true;
+
+      if (mode === 'lockdown') {
+        const envStatus = await invoke('get_lockdown_environment_status_cmd').catch((e) => {
+          console.warn('Lockdown environment status check failed:', e);
+          return null;
+        });
+
+        envReady = !!envStatus?.ready;
+        if (!envReady) {
+          appendOutput('info', '⚠ Lockdown environment shell is not active. Applying app-level lockdown protections only.');
+          const shouldPrepare = confirm('Lockdown environment is inactive. Prepare it now with admin elevation?');
+          if (shouldPrepare) {
+            const prep = await invoke('prepare_lockdown_environment_cmd').catch((e) => {
+              console.warn('Lockdown environment preparation failed:', e);
+              return { success: false, message: String(e) };
+            });
+
+            if (prep?.success) {
+              alert('Lockdown environment helper finished. Sign in to the RestrictedExam user and relaunch for strict lockdown mode.');
+            } else {
+              alert('Failed to prepare lockdown environment: ' + (prep?.message || 'unknown error'));
+            }
+          }
+        }
+      }
+
       const resp = await invoke('set_kiosk_mode', {
         enabled: true,
         policy: {
           security_mode: sec.security_mode || 'monitor',
           prevent_screenshots: !!sec.prevent_screenshots,
-          focus_watchdog: !!sec.focus_watchdog,
+          focus_watchdog: mode === 'lockdown' ? false : !!sec.focus_watchdog,
           controlled_paste: !!sec.controlled_paste,
         },
       });
 
       if (resp && resp.success === false) {
         console.warn('Kiosk activation skipped:', resp.message || 'unknown reason');
+        return false;
       }
+
+      if (mode === 'lockdown' && !envReady) {
+        appendOutput('info', 'Lockdown started without exam-shell OS hardening. For strongest lockdown, relaunch via exam-shell.');
+      }
+
+      return true;
     } catch (err) {
       console.error('Kiosk activation error:', err);
+      return false;
     }
   }
 

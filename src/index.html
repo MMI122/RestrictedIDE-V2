@@ -130,7 +130,22 @@
               <option value="monitor">Monitor (log only)</option>
               <option value="strict" selected>Strict (auto-submit on repeated violations)</option>
               <option value="ultra">Ultra Strict (hard lockdown)</option>
+              <option value="lockdown">Lockdown (immediate auto-submit + emergency unlock)</option>
             </select>
+          </div>
+          <div id="lockdown-options" class="hidden">
+            <div class="form-row checkbox-row">
+              <label><input type="checkbox" id="sec-lockdown-emergency" checked /> Enable Emergency Unlock</label>
+            </div>
+            <div class="form-row">
+              <label for="sec-lockdown-password">Emergency Unlock Password</label>
+              <input type="password" id="sec-lockdown-password" minlength="8" placeholder="Teacher-only emergency password" autocomplete="new-password" />
+            </div>
+            <div class="form-row">
+              <label for="sec-lockdown-password-confirm">Confirm Emergency Password</label>
+              <input type="password" id="sec-lockdown-password-confirm" minlength="8" placeholder="Re-enter password" autocomplete="new-password" />
+            </div>
+            <div class="lockdown-help">In lockdown mode, one focus loss triggers immediate auto-submit. Emergency unlock is available in student view with Ctrl+Shift+U.</div>
           </div>
           <div class="form-row checkbox-row">
             <label><input type="checkbox" id="sec-vm-check" checked /> Block VMs</label>
@@ -230,6 +245,7 @@
         </div>
         <div class="dashboard-header-right">
           <span id="dashboard-timer" class="dashboard-timer">--:--</span>
+          <span id="dash-reentry-alert" class="reentry-alert-badge hidden">Re-entry requests: 0</span>
           <button class="landing-btn primary" id="btn-start-session">▶ Start Session</button>
           <button class="landing-btn outline" id="btn-end-session" style="display:none;">■ End Session</button>
           <button class="landing-btn primary" id="btn-review-submissions" style="display:none;">📋 Review Submissions</button>
@@ -280,6 +296,12 @@
         <div class="dash-card" id="dash-participants">
           <h3>Participants (<span id="dash-participant-count">0</span>)</h3>
           <div id="participant-list" class="participant-list"></div>
+        </div>
+
+        <!-- Re-entry Requests -->
+        <div class="dash-card" id="dash-reentry-requests">
+          <h3>Re-entry Requests (<span id="dash-reentry-count">0</span>)</h3>
+          <div id="reentry-request-list" class="reentry-request-list"></div>
         </div>
 
         <!-- Participant Detail -->
@@ -343,7 +365,7 @@
 
   <!-- ═══════════ POST-SESSION REVIEW (admin) ═══════════ -->
   <div id="post-session-screen" class="session-screen hidden">
-    <div class="post-session-container">
+    <div id="post-session-container" class="post-session-container">
       <div class="post-header">
         <div class="post-header-left">
           <h2 id="post-session-name">Session Review</h2>
@@ -363,15 +385,45 @@
       <div class="post-body">
         <!-- Submission sidebar -->
         <div class="post-sidebar">
-          <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
-          <div id="post-submission-list" class="post-submission-list"></div>
+          <div id="post-submissions-section" class="post-sidebar-section">
+            <div class="post-section-head">
+              <h3>Submissions (<span id="post-submission-count">0</span>)</h3>
+              <button id="btn-focus-submissions" class="post-focus-btn" title="Focus submissions panel">⤢</button>
+            </div>
+            <div id="post-submission-list" class="post-submission-list"></div>
+          </div>
+
+          <div class="post-divider"></div>
+
+          <div id="post-violations-section" class="post-sidebar-section">
+            <div class="post-section-head">
+              <h3>Violation History (<span id="post-violation-total">0</span>)</h3>
+              <button id="btn-focus-violations-list" class="post-focus-btn" title="Focus violation history panel">⤢</button>
+            </div>
+            <div class="post-sidebar-filter-row">
+              <label for="post-student-filter" class="post-sidebar-filter-label">Student</label>
+              <select id="post-student-filter" class="post-sidebar-filter-select">
+                <option value="all">All students</option>
+              </select>
+            </div>
+            <div id="post-violation-stats" class="post-violation-stats">
+              <span class="vstat">Students: <strong id="post-violation-students">0</strong></span>
+              <span class="vstat">Critical: <strong id="post-violation-critical">0</strong></span>
+            </div>
+            <div id="post-violation-student-list" class="post-violation-student-list"></div>
+          </div>
         </div>
+
+        <div id="post-sidebar-resize-handle" class="post-sidebar-resize-handle" title="Drag to resize sidebar" aria-label="Resize sidebar"></div>
 
         <!-- Code viewer + results -->
         <div class="post-main">
           <!-- Judge results table -->
           <div id="post-results-panel" class="post-results-panel hidden">
-            <h3>Judge Results</h3>
+            <div class="post-section-head">
+              <h3>Judge Results</h3>
+              <button id="btn-focus-judge" class="post-focus-btn" title="Focus judge results">⤢</button>
+            </div>
             <div id="post-results-table-wrap" class="post-results-table-wrap">
               <table id="post-results-table">
                 <thead>
@@ -389,10 +441,27 @@
               </table>
             </div>
           </div>
+
+          <div id="post-splitter-results" class="post-splitter horizontal" title="Drag to resize results and timeline" aria-label="Resize results and timeline"></div>
+
+          <div id="post-violation-panel" class="post-violation-panel">
+            <div class="post-violation-head">
+              <h3>Violation Timeline</h3>
+              <div class="post-violation-head-right">
+                <span id="post-violation-selected" class="post-violation-selected">All students</span>
+                <button id="btn-focus-violation-timeline" class="post-focus-btn" title="Focus violation timeline">⤢</button>
+              </div>
+            </div>
+            <div id="post-violation-timeline" class="post-violation-timeline"></div>
+          </div>
+
+          <div id="post-splitter-violation" class="post-splitter horizontal" title="Drag to resize timeline and code" aria-label="Resize timeline and code"></div>
+
           <!-- Code viewer -->
           <div id="post-code-viewer" class="post-code-viewer">
             <div class="code-viewer-header">
               <span id="post-viewer-title">Select a submission to view</span>
+              <button id="btn-focus-code" class="post-focus-btn" title="Focus code viewer">⤢</button>
             </div>
             <pre id="post-viewer-code" class="code-preview"></pre>
           </div>
@@ -566,6 +635,7 @@
       <div id="editor-container">
         <div id="line-numbers"></div>
         <div id="editor-wrapper">
+          <div id="monaco-editor" aria-label="Code Editor"></div>
           <pre id="syntax-highlight" aria-hidden="true"></pre>
           <textarea id="code-editor"
                     spellcheck="false"
@@ -643,6 +713,7 @@
   </div>
 
   <!-- ═══════════ SCRIPTS ═══════════ -->
+  <script src="vendor/vs/loader.js"></script>
   <script src="app.js"></script>
   <script src="editor.js"></script>
   <script src="file-tree.js"></script>

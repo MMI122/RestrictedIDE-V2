@@ -67,15 +67,36 @@ pub async fn create_session_cmd(
     questions: Vec<QuestionInput>,
     allowed_urls: Vec<String>,
     options: SessionOptions,
+    lockdown_exit_password: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
     let transport = session_state.get_transport()?;
+
+    let mut normalized_options = options;
+    let mode = normalized_options.security_mode.to_lowercase();
+    if mode == "lockdown" {
+        let password = lockdown_exit_password
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| "Lockdown mode requires an emergency unlock password".to_string())?;
+
+        if password.len() < 8 {
+            return Err("Emergency unlock password must be at least 8 characters".to_string());
+        }
+
+        let hash = bcrypt::hash(&password, 12)
+            .map_err(|e| format!("Failed to hash emergency unlock password: {}", e))?;
+        normalized_options.lockdown_exit_password_hash = Some(hash);
+    } else {
+        normalized_options.lockdown_emergency_unlock = false;
+        normalized_options.lockdown_exit_password_hash = None;
+    }
 
     let req = CreateSessionRequest {
         name,
         duration_minutes,
         questions,
         allowed_urls,
-        options,
+        options: normalized_options,
     };
 
     let mut resp = transport
@@ -165,6 +186,7 @@ pub async fn join_session_cmd(
     code: String,
     student_id: String,
     display_name: Option<String>,
+    device_id: Option<String>,
 ) -> Result<JoinSessionResponse, String> {
     let transport = session_state.get_transport()?;
     let resp = transport
@@ -173,6 +195,7 @@ pub async fn join_session_cmd(
             &code,
             &student_id,
             display_name.as_deref(),
+            device_id.as_deref(),
         )
         .map_err(transport_err)?;
 
@@ -397,6 +420,57 @@ pub async fn report_violation_cmd(
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unlock_lockdown_cmd(
+    session_state: State<'_, SessionState>,
+    session_id: String,
+    password: String,
+) -> Result<bool, String> {
+    let trimmed = password.trim();
+    if trimmed.is_empty() {
+        return Ok(false);
+    }
+
+    let session = session_state
+        .db
+        .get_session_by_id(&session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Session not found".to_string())?;
+
+    if session.options.security_mode.to_lowercase() != "lockdown" {
+        return Ok(false);
+    }
+
+    if !session.options.lockdown_emergency_unlock {
+        return Ok(false);
+    }
+
+    let hash = match session.options.lockdown_exit_password_hash.as_deref() {
+        Some(h) => h,
+        None => return Ok(false),
+    };
+
+    let verified = bcrypt::verify(trimmed, hash).unwrap_or(false);
+    if verified {
+        let student_id = session_state
+            .current_student_id
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let _ = session_state.db.add_violation(
+            &session_id,
+            &student_id,
+            "emergency_unlock",
+            "critical",
+            Some("Emergency unlock accepted via invigilator password"),
+        );
+    }
+
+    Ok(verified)
 }
 
 #[tauri::command]

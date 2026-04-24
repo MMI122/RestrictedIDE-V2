@@ -41,6 +41,7 @@ impl LanServer {
             .route("/api/session/{id}/participants", get(handle_participants))
             .route("/api/session/{id}/submissions", get(handle_submissions))
             .route("/api/session/{id}/violations", get(handle_violations).post(handle_report_violation))
+            .route("/api/session/{id}/unlock", post(handle_lockdown_unlock))
             .route("/api/session/{id}/broadcasts/{student_id}", get(handle_student_broadcasts))
             .route("/api/session/{id}/questions", get(handle_questions))
             .route("/api/session/{id}/broadcast", post(handle_broadcast))
@@ -167,6 +168,7 @@ async fn handle_health() -> impl IntoResponse {
 struct JoinBody {
     student_id: String,
     display_name: Option<String>,
+    device_id: Option<String>,
 }
 
 async fn handle_join(
@@ -184,21 +186,116 @@ async fn handle_join(
         return err_json(StatusCode::GONE, "Session has ended").into_response();
     }
 
+    let normalized_device = body
+        .device_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let existing_participant = match db.get_participant(&session.id, &body.student_id) {
+        Ok(p) => p,
+        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    };
+
+    if let Some(ref did) = normalized_device {
+        let enforce_device_lock = match existing_participant.as_ref() {
+            Some(p) => !matches!(
+                p.state,
+                ParticipantState::Joined
+                    | ParticipantState::Active
+                    | ParticipantState::Disconnected
+            ),
+            None => true,
+        };
+
+        if enforce_device_lock {
+            if let Ok(participants) = db.get_participants(&session.id) {
+                if let Some(owner) = participants.into_iter().find(|p| {
+                    p.student_id != body.student_id
+                        && p.device_id.as_deref() == Some(did.as_str())
+                        && matches!(
+                            p.state,
+                            ParticipantState::Submitted
+                                | ParticipantState::Kicked
+                                | ParticipantState::ReentryPending
+                        )
+                }) {
+                    if existing_participant.is_none() {
+                        let _ = db.add_participant(
+                            &session.id,
+                            &body.student_id,
+                            body.display_name.as_deref(),
+                            Some(did),
+                        );
+                    }
+                    let _ = db.update_participant_state(&session.id, &body.student_id, "reentry_pending");
+                    let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+                    let _ = db.add_violation(
+                        &session.id,
+                        &body.student_id,
+                        "reentry_request",
+                        "warning",
+                        Some(&format!(
+                            "Device already used in this session by {} and is awaiting/needs admin release",
+                            owner.student_id
+                        )),
+                    );
+                    return err_json(
+                        StatusCode::FORBIDDEN,
+                        "This device is locked for this session. Administrator approval is required to continue",
+                    )
+                    .into_response();
+                }
+            }
+        }
+    }
+
     // Add participant (or re-join if already exists)
-    match db.get_participant(&session.id, &body.student_id) {
-        Ok(Some(p)) => {
-            if p.state == ParticipantState::Kicked {
-                return err_json(StatusCode::FORBIDDEN, "You have been removed from this session").into_response();
+    match existing_participant {
+        Some(p) => {
+            if p.state == ParticipantState::Kicked || p.state == ParticipantState::Submitted {
+                let _ = db.update_participant_state(&session.id, &body.student_id, "reentry_pending");
+                if let Some(ref did) = normalized_device {
+                    let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+                }
+                let _ = db.add_violation(
+                    &session.id,
+                    &body.student_id,
+                    "reentry_request",
+                    "warning",
+                    Some("Student requested re-entry after removal/submission"),
+                );
+                return err_json(
+                    StatusCode::FORBIDDEN,
+                    "Re-entry requires administrator approval for this session",
+                )
+                .into_response();
+            }
+
+            if p.state == ParticipantState::ReentryPending {
+                return err_json(
+                    StatusCode::FORBIDDEN,
+                    "Re-entry request is pending administrator approval",
+                )
+                .into_response();
             }
             // Re-join: update heartbeat
+            if let Some(ref did) = normalized_device {
+                let _ = db.update_participant_device_id(&session.id, &body.student_id, Some(did));
+            }
             let _ = db.update_heartbeat(&session.id, &body.student_id);
         }
-        Ok(None) => {
-            if let Err(e) = db.add_participant(&session.id, &body.student_id, body.display_name.as_deref()) {
+        None => {
+            if let Err(e) = db.add_participant(
+                &session.id,
+                &body.student_id,
+                body.display_name.as_deref(),
+                normalized_device.as_deref(),
+            ) {
                 return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
             }
         }
-        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
 
     let questions = db.get_questions(&session.id).unwrap_or_default();
@@ -300,7 +397,10 @@ async fn handle_heartbeat(
     }
 
     if let Ok(Some(p)) = db.get_participant(&id, &body.student_id) {
-        if p.state == ParticipantState::Kicked {
+        if p.state == ParticipantState::Kicked
+            || p.state == ParticipantState::Submitted
+            || p.state == ParticipantState::ReentryPending
+        {
             return err_json(StatusCode::FORBIDDEN, "You have been removed from this session")
                 .into_response();
         }
@@ -323,6 +423,12 @@ struct ViolationBody {
     event_type: String,
     severity: String,
     details: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LockdownUnlockBody {
+    student_id: String,
+    password: String,
 }
 
 // GET /api/session/:id/participants
@@ -374,6 +480,45 @@ async fn handle_report_violation(
         Ok(v) => ok_json(v).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
     }
+}
+
+// POST /api/session/:id/unlock
+async fn handle_lockdown_unlock(
+    State(db): State<ServerState>,
+    Path(id): Path<String>,
+    Json(body): Json<LockdownUnlockBody>,
+) -> impl IntoResponse {
+    let session = match db.get_session_by_id(&id) {
+        Ok(Some(s)) => s,
+        Ok(None) => return err_json(StatusCode::NOT_FOUND, "Session not found").into_response(),
+        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response(),
+    };
+
+    if session.options.security_mode.to_lowercase() != "lockdown" {
+        return ok_json(serde_json::json!({ "unlocked": false })).into_response();
+    }
+
+    if !session.options.lockdown_emergency_unlock {
+        return ok_json(serde_json::json!({ "unlocked": false })).into_response();
+    }
+
+    let hash = match session.options.lockdown_exit_password_hash.as_deref() {
+        Some(h) => h,
+        None => return ok_json(serde_json::json!({ "unlocked": false })).into_response(),
+    };
+
+    let verified = bcrypt::verify(body.password.trim(), hash).unwrap_or(false);
+    if verified {
+        let _ = db.add_violation(
+            &id,
+            &body.student_id,
+            "emergency_unlock",
+            "critical",
+            Some("Emergency unlock accepted via invigilator password"),
+        );
+    }
+
+    ok_json(serde_json::json!({ "unlocked": verified })).into_response()
 }
 
 // GET /api/session/:id/broadcasts/:student_id
