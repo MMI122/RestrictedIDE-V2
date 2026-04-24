@@ -24,10 +24,15 @@ const JoinSession = (() => {
     if (cachedDeviceId) return cachedDeviceId;
     try {
       const info = await invoke('get_system_info');
-      const platform = String(info?.platform || 'unknown').toLowerCase();
-      const arch = String(info?.arch || 'unknown').toLowerCase();
-      const host = String(info?.hostname || 'unknown').toLowerCase();
-      cachedDeviceId = `${platform}:${arch}:${host}`;
+      const fp = String(info?.device_fingerprint || '').trim().toLowerCase();
+      if (fp) {
+        cachedDeviceId = fp;
+      } else {
+        const platform = String(info?.platform || 'unknown').toLowerCase();
+        const arch = String(info?.arch || 'unknown').toLowerCase();
+        const host = String(info?.hostname || 'unknown').toLowerCase();
+        cachedDeviceId = `${platform}:${arch}:${host}`;
+      }
     } catch (e) {
       console.warn('Failed to read system info for device ID:', e);
       cachedDeviceId = 'unknown-device';
