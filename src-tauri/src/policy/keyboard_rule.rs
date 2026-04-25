@@ -56,3 +56,44 @@ impl KeyboardRule {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::KeyboardRule;
+
+    #[test]
+    fn blacklist_blocks_registered_combo_order_insensitive() {
+        let rule = KeyboardRule::new(
+            "blacklist",
+            vec![(vec!["ctrl".into(), "shift".into(), "i".into()], "blocked".into())],
+        );
+
+        let result = rule.validate(&["I".into(), "CTRL".into(), "Shift".into()]);
+        assert!(!result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("blocked"));
+    }
+
+    #[test]
+    fn blacklist_allows_unlisted_combo() {
+        let rule = KeyboardRule::new(
+            "blacklist",
+            vec![(vec!["alt".into(), "f4".into()], "no-close".into())],
+        );
+
+        let result = rule.validate(&["ctrl".into(), "s".into()]);
+        assert!(result.allowed);
+        assert!(result.reason.is_none());
+    }
+
+    #[test]
+    fn whitelist_rejects_unknown_combo() {
+        let rule = KeyboardRule::new(
+            "whitelist",
+            vec![(vec!["ctrl".into(), "s".into()], "save".into())],
+        );
+
+        let result = rule.validate(&["ctrl".into(), "p".into()]);
+        assert!(!result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("Key combo not in whitelist"));
+    }
+}

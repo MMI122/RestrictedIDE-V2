@@ -1,10 +1,10 @@
 mod commands;
-mod config;
+pub mod config;
 mod logger;
-mod policy;
+pub mod policy;
 mod runtime;
 mod security;
-mod session;
+pub mod session;
 
 use config::AppConfig;
 use policy::engine::PolicyEngine;
