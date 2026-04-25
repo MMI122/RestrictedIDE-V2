@@ -1,7 +1,7 @@
 {
   "productName": "Restricted IDE",
   "version": "0.1.0",
-  "identifier": "com.restricted-ide.app",
+  "identifier": "com.restrictedide.desktop",
   "build": {
     "frontendDist": "../src"
   },
@@ -19,12 +19,17 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      "csp": "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: blob:; font-src 'self' data: https:; connect-src 'self' http://localhost:* http://127.0.0.1:* http://*:* https://*:*; frame-src 'self' https: http:"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": [
+      "../scripts/windows/enable-exam-shell.ps1",
+      "../scripts/windows/disable-exam-shell.ps1",
+      "../scripts/windows/EXAM_SHELL.md"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

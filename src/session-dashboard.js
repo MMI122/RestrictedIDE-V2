@@ -214,8 +214,8 @@ const Dashboard = (() => {
           <div>
             <span class="status-badge ${dotClass}" style="font-size:10px;">${state}</span>
             ${!needsPermit
-              ? `<button class="kick-btn" onclick="Dashboard.kickParticipant('${escapeHtml(p.student_id)}')">Kick</button>`
-              : `<button class="kick-btn permit" onclick="Dashboard.permitReentry('${escapeHtml(p.student_id)}')">Permit Re-entry</button>`}
+              ? `<button class="kick-btn js-kick-btn" data-student-id="${escapeHtml(p.student_id)}">Kick</button>`
+              : `<button class="kick-btn permit js-permit-btn" data-student-id="${escapeHtml(p.student_id)}">Permit Re-entry</button>`}
           </div>
         </div>
       `;
@@ -226,6 +226,22 @@ const Dashboard = (() => {
         selectedStudentId = row.dataset.studentId || null;
         renderParticipants(latestParticipants);
         renderParticipantDetail();
+      });
+    });
+
+    list.querySelectorAll('.js-kick-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const studentId = btn.dataset.studentId;
+        if (studentId) kickParticipant(studentId);
+      });
+    });
+
+    list.querySelectorAll('.js-permit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const studentId = btn.dataset.studentId;
+        if (studentId) permitReentry(studentId);
       });
     });
 
@@ -258,9 +274,16 @@ const Dashboard = (() => {
           <span class="reentry-student-name">${escapeHtml(p.display_name || p.student_id)}</span>
           <span class="reentry-student-id">${escapeHtml(p.student_id)}</span>
         </div>
-        <button class="kick-btn permit" onclick="Dashboard.permitReentry('${escapeHtml(p.student_id)}')">Approve Re-entry</button>
+        <button class="kick-btn permit js-reentry-approve-btn" data-student-id="${escapeHtml(p.student_id)}">Approve Re-entry</button>
       </div>
     `).join('');
+
+    listEl.querySelectorAll('.js-reentry-approve-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const studentId = btn.dataset.studentId;
+        if (studentId) permitReentry(studentId);
+      });
+    });
   }
 
   function updateReentryAlert(pendingCount) {

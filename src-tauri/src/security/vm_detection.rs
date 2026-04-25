@@ -5,6 +5,21 @@
 
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn new_hidden_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct VmCheckResult {
     pub is_vm: bool,
@@ -117,7 +132,7 @@ fn check_registry_indicators(indicators: &mut Vec<String>) {
 
 /// Test if a registry key exists using `reg query`.
 fn registry_key_exists(path: &str) -> bool {
-    Command::new("reg")
+    new_hidden_command("reg")
         .args(["query", path])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -215,7 +230,7 @@ fn is_suspicious_bios_serial(serial: &str) -> bool {
 
 /// Run `wmic <alias> get <property>` and return the value line.
 fn wmic_value(alias: &str, property: &str) -> Option<String> {
-    let output = Command::new("wmic")
+    let output = new_hidden_command("wmic")
         .args([alias, "get", property])
         .output()
         .ok()?;
@@ -245,7 +260,7 @@ fn check_vm_processes(indicators: &mut Vec<String>) {
         "prl_cc.exe",
     ];
 
-    let output = match Command::new("tasklist")
+    let output = match new_hidden_command("tasklist")
         .args(["/FO", "CSV", "/NH"])
         .output()
     {
@@ -275,7 +290,7 @@ fn check_mac_address(indicators: &mut Vec<String>) {
         "00:1c:42", // Parallels
     ];
 
-    let output = match Command::new("getmac")
+    let output = match new_hidden_command("getmac")
         .args(["/FO", "CSV", "/NH", "/V"])
         .output()
     {

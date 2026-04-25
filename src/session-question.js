@@ -148,6 +148,14 @@ const QuestionPanel = (() => {
     return String(u || '').trim();
   }
 
+  function tryParseUrl(u) {
+    try {
+      return new URL(String(u || '').trim());
+    } catch {
+      return null;
+    }
+  }
+
   function isAllowedBySession(url) {
     const normalized = normalizeUrl(url);
     return allowedUrls.some(pattern => {
@@ -156,8 +164,69 @@ const QuestionPanel = (() => {
       if (p.endsWith('*')) {
         return normalized.startsWith(p.slice(0, -1));
       }
-      return normalized === p;
+
+      if (normalized === p) return true;
+
+      const candidate = tryParseUrl(normalized);
+      const allowed = tryParseUrl(p);
+      if (!candidate || !allowed) return false;
+
+      if (candidate.origin !== allowed.origin) return false;
+
+      const allowedPath = allowed.pathname.endsWith('/')
+        ? allowed.pathname
+        : `${allowed.pathname}/`;
+
+      return candidate.pathname === allowed.pathname || candidate.pathname.startsWith(allowedPath);
     });
+  }
+
+  function wireDocViewerInFrameNavigation(frameEl, baseUrl) {
+    const loadHandler = () => {
+      let doc;
+      try {
+        doc = frameEl.contentDocument;
+      } catch {
+        return;
+      }
+      if (!doc || doc.__restrictedDocNavBound) return;
+
+      doc.__restrictedDocNavBound = true;
+      doc.addEventListener('click', (event) => {
+        const anchor = event.target?.closest?.('a[href]');
+        if (!anchor) return;
+
+        const href = String(anchor.getAttribute('href') || '').trim();
+        if (!href || href.startsWith('#')) return;
+        if (href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+
+        event.preventDefault();
+
+        let resolved;
+        try {
+          resolved = new URL(href, baseUrl).toString();
+        } catch {
+          return;
+        }
+
+        if (!isAllowedBySession(resolved)) {
+          alert('This URL is not allowed for this session.');
+          return;
+        }
+
+        openDocViewer(resolved).catch((err) => {
+          console.error('In-frame navigation failed:', err);
+          alert('Unable to open URL: ' + (err.message || err));
+        });
+      }, true);
+    };
+
+    if (frameEl.__restrictedDocLoadHandler) {
+      frameEl.removeEventListener('load', frameEl.__restrictedDocLoadHandler);
+    }
+    frameEl.__restrictedDocLoadHandler = loadHandler;
+    frameEl.addEventListener('load', loadHandler);
+    loadHandler();
   }
 
   function wireAllowedUrlLinks() {
@@ -212,6 +281,7 @@ const QuestionPanel = (() => {
       const safeBase = escapeHtmlAttr(data?.url || url);
       frameEl.removeAttribute('src');
       frameEl.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><base href="${safeBase}"></head><body>${html}</body></html>`;
+      wireDocViewerInFrameNavigation(frameEl, data?.url || url);
       loadingEl.classList.add('hidden');
       return;
     } catch (err) {

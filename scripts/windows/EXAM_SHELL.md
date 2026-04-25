@@ -13,6 +13,8 @@ This adds OS-level containment for a dedicated exam account, so Ctrl+Alt+Del esc
   - Logoff / Run / Control Panel / Win keys disabled for exam account
 - Optional machine-wide policy:
   - Hide fast user switching
+- Refreshes exam user's PATH from machine PATH and (by default) the invoker's user PATH.
+- Adds existing extra tool paths (default includes `C:\MinGW\bin`) to exam user PATH.
 
 ## What this does not guarantee
 
@@ -30,6 +32,18 @@ This adds OS-level containment for a dedicated exam account, so Ctrl+Alt+Del esc
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\enable-exam-shell.ps1 -AppPath "C:\Program Files\RestrictedIDE\restricted-ide.exe" -ExamUser "RestrictedExam"
+```
+
+If you do not want to copy invoker user PATH into exam user:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\enable-exam-shell.ps1 -AppPath "C:\Program Files\RestrictedIDE\restricted-ide.exe" -ExamUser "RestrictedExam" -PropagateInvokerPath:$false
+```
+
+To append additional tool folders for the exam user:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\enable-exam-shell.ps1 -AppPath "C:\Program Files\RestrictedIDE\restricted-ide.exe" -ExamUser "RestrictedExam" -ExtraToolPaths "C:\MinGW\bin","D:\Toolchains\LLVM\bin"
 ```
 
 Optional machine-wide policy:

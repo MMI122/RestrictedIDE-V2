@@ -394,10 +394,38 @@ pub async fn permit_reentry_cmd(
     session_id: String,
     student_id: String,
 ) -> Result<(), String> {
+    let participant = session_state
+        .db
+        .get_participant(&session_id, &student_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            format!(
+                "Participant '{}' not found in session '{}'. Open the session on the host machine where it was created.",
+                student_id, session_id
+            )
+        })?;
+
+    match &participant.state {
+        ParticipantState::ReentryPending | ParticipantState::Kicked | ParticipantState::Submitted => {}
+        _ => {
+            return Err(format!(
+                "Participant '{}' is in '{}' state; re-entry approval is only valid for pending/removed participants.",
+                student_id,
+                format!("{:?}", participant.state)
+            ));
+        }
+    }
+
     session_state
         .db
         .update_participant_state(&session_id, &student_id, "joined")
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let _ = session_state
+        .db
+        .update_heartbeat(&session_id, &student_id);
+
+    Ok(())
 }
 
 #[tauri::command]

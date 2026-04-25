@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[cfg(target_os = "windows")]
@@ -54,7 +54,93 @@ fn minimal_env() -> HashMap<String, String> {
             env.insert(key.into(), v);
         }
     }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(path_value) = env.get("PATH").cloned() {
+            let mut seen: Vec<String> = path_value
+                .split(';')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_ascii_lowercase())
+                .collect();
+
+            let mut merged = path_value;
+            for dir in windows_fallback_tool_dirs() {
+                let lower = dir.to_ascii_lowercase();
+                if !seen.iter().any(|p| p == &lower) {
+                    if !merged.ends_with(';') && !merged.is_empty() {
+                        merged.push(';');
+                    }
+                    merged.push_str(&dir);
+                    seen.push(lower);
+                }
+            }
+
+            env.insert("PATH".into(), merged);
+        }
+    }
+
     env
+}
+
+#[cfg(target_os = "windows")]
+fn windows_fallback_tool_dirs() -> Vec<String> {
+    [
+        r"C:\MinGW\bin",
+        r"C:\msys64\mingw64\bin",
+        r"C:\msys64\ucrt64\bin",
+    ]
+    .iter()
+    .filter(|p| Path::new(p).exists())
+    .map(|p| p.to_string())
+    .collect()
+}
+
+fn command_from_env_or_fallback(cmd: &str, env: &HashMap<String, String>) -> String {
+    if Path::new(cmd).is_absolute() {
+        return cmd.to_string();
+    }
+
+    if let Some(path_value) = env.get("PATH") {
+        if let Some(found) = find_in_path(cmd, path_value) {
+            return found;
+        }
+    }
+
+    cmd.to_string()
+}
+
+fn find_in_path(cmd: &str, path_value: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let has_ext = Path::new(cmd).extension().is_some();
+        let mut candidates = vec![cmd.to_string()];
+        if !has_ext {
+            candidates.push(format!("{}.exe", cmd));
+        }
+
+        for dir in path_value.split(';').filter(|d| !d.trim().is_empty()) {
+            let base = PathBuf::from(dir.trim());
+            for candidate in &candidates {
+                let full = base.join(candidate);
+                if full.exists() {
+                    return Some(full.to_string_lossy().to_string());
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        for dir in path_value.split(':').filter(|d| !d.trim().is_empty()) {
+            let full = PathBuf::from(dir.trim()).join(cmd);
+            if full.exists() {
+                return Some(full.to_string_lossy().to_string());
+            }
+        }
+        None
+    }
 }
 
 fn kill_pid(pid: u32) {
@@ -144,14 +230,14 @@ pub fn run_code(
         let (compiler, compile_args, run_cmd, run_args) = match ext.as_str() {
             ".c" => {
                 let out = format!("{}\\{}.exe", work_dir, base_name);
-                ("gcc", vec![file_path.clone(), "-o".into(), out.clone()], out, vec![])
+                ("gcc".to_string(), vec![file_path.clone(), "-o".into(), out.clone()], out, vec![])
             }
             ".cpp" => {
                 let out = format!("{}\\{}.exe", work_dir, base_name);
-                ("g++", vec![file_path.clone(), "-o".into(), out.clone()], out, vec![])
+                ("g++".to_string(), vec![file_path.clone(), "-o".into(), out.clone()], out, vec![])
             }
             ".java" => (
-                "javac",
+                "javac".to_string(),
                 vec![file_path.clone()],
                 "java".into(),
                 vec!["-cp".into(), work_dir.clone(), base_name.clone()],
@@ -161,7 +247,9 @@ pub fn run_code(
 
         emit_output(&app, "info", "⏳ Compiling…\n");
 
-        let mut compile_cmd = Command::new(compiler);
+        let resolved_compiler = command_from_env_or_fallback(&compiler, &env);
+
+        let mut compile_cmd = Command::new(&resolved_compiler);
         compile_cmd
             .args(&compile_args)
             .current_dir(&work_dir)
@@ -200,13 +288,14 @@ pub fn run_code(
         spawn_and_stream(&run_cmd, &run_args, &work_dir, &env, app, state)?;
     } else {
         // 5  Interpreted languages
-        let (cmd, args): (&str, Vec<String>) = match ext.as_str() {
-            ".py" => ("python", vec![file_path.clone()]),
-            ".js" => ("node", vec![file_path.clone()]),
+        let (cmd, args): (String, Vec<String>) = match ext.as_str() {
+            ".py" => ("python".into(), vec![file_path.clone()]),
+            ".js" => ("node".into(), vec![file_path.clone()]),
             _ => unreachable!(),
         };
-        log::info!("[CODE] Spawning interpreted: {} {:?}", cmd, args);
-        spawn_and_stream(cmd, &args, &work_dir, &env, app, state)?;
+        let resolved_cmd = command_from_env_or_fallback(&cmd, &env);
+        log::info!("[CODE] Spawning interpreted: {} {:?}", resolved_cmd, args);
+        spawn_and_stream(&resolved_cmd, &args, &work_dir, &env, app, state)?;
     }
 
     log::info!("[CODE] run_code returning success");

@@ -2,6 +2,12 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Serialize)]
 pub struct SystemInfo {
     pub platform: String,
@@ -24,6 +30,7 @@ fn normalized_token(s: &str) -> Option<String> {
 fn wmic_value(alias: &str, property: &str) -> Option<String> {
     let output = Command::new("wmic")
         .args([alias, "get", property])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     if !output.status.success() {
@@ -45,6 +52,7 @@ fn machine_guid() -> Option<String> {
             "/v",
             "MachineGuid",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     if !output.status.success() {
