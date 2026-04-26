@@ -129,3 +129,56 @@ impl FileAccessRule {
         &self.sandbox_path
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FileAccessRule;
+
+    fn build_rule() -> FileAccessRule {
+        FileAccessRule::new(
+            "sandbox",
+            "C:\\sandbox",
+            vec![".txt".into(), ".rs".into()],
+            1024,
+            vec!["C:\\sandbox\\secret".into()],
+        )
+    }
+
+    #[test]
+    fn rejects_path_traversal() {
+        let rule = build_rule();
+        let result = rule.validate("C:\\sandbox\\..\\Windows\\file.txt", "read");
+        assert!(!result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("Path traversal not allowed"));
+    }
+
+    #[test]
+    fn rejects_disallowed_extension() {
+        let rule = build_rule();
+        let result = rule.validate("C:\\sandbox\\main.exe", "write");
+        assert!(!result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("File extension not allowed: .exe"));
+    }
+
+    #[test]
+    fn allows_delete_even_if_extension_not_whitelisted() {
+        let rule = build_rule();
+        let result = rule.validate("C:\\sandbox\\old.bin", "delete");
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn rejects_outside_sandbox() {
+        let rule = build_rule();
+        let result = rule.validate("D:\\other\\file.txt", "read");
+        assert!(!result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("Path outside sandbox"));
+    }
+
+    #[test]
+    fn validates_file_size_limit() {
+        let rule = build_rule();
+        assert!(rule.validate_file_size(1024).allowed);
+        assert!(!rule.validate_file_size(1025).allowed);
+    }
+}

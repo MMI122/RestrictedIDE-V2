@@ -57,3 +57,47 @@ impl TimeRule {
         ValidationResult { allowed: true, reason: None }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Local;
+
+    use super::{Schedule, TimeRule};
+
+    #[test]
+    fn disabled_rule_always_allows() {
+        let rule = TimeRule::new(true, None);
+        let result = rule.validate();
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn allows_when_current_time_is_inside_window_for_today() {
+        let today: u32 = Local::now().format("%w").to_string().parse().unwrap_or(0);
+        let schedule = Schedule {
+            start_time: "00:00".to_string(),
+            end_time: "23:59".to_string(),
+            days: vec![today],
+        };
+        let rule = TimeRule::new(true, Some(schedule));
+
+        let result = rule.validate();
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn denies_when_today_is_not_in_allowed_days() {
+        let today: u32 = Local::now().format("%w").to_string().parse().unwrap_or(0);
+        let different_day = (today + 1) % 7;
+        let schedule = Schedule {
+            start_time: "00:00".to_string(),
+            end_time: "23:59".to_string(),
+            days: vec![different_day],
+        };
+        let rule = TimeRule::new(true, Some(schedule));
+
+        let result = rule.validate();
+        assert!(!result.allowed);
+        assert!(result.reason.unwrap_or_default().contains("Not available on day"));
+    }
+}
