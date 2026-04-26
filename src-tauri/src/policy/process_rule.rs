@@ -73,3 +73,39 @@ impl ProcessRule {
         !self.validate(name).allowed
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessRule;
+
+    #[test]
+    fn system_process_is_always_allowed() {
+        let rule = ProcessRule::new("whitelist", vec![], vec!["svchost.exe".into()]);
+
+        let result = rule.validate("C:\\Windows\\System32\\svchost.exe");
+        assert!(result.allowed);
+        assert_eq!(result.reason.as_deref(), Some("System process"));
+    }
+
+    #[test]
+    fn blacklist_denies_even_when_in_whitelist_mode() {
+        let rule = ProcessRule::new(
+            "whitelist",
+            vec!["code.exe".into(), "node.exe".into()],
+            vec!["powershell.exe".into()],
+        );
+
+        let result = rule.validate("powershell.exe");
+        assert!(!result.allowed);
+        assert!(result.reason.unwrap_or_default().contains("blocked"));
+    }
+
+    #[test]
+    fn whitelist_denies_unknown_process() {
+        let rule = ProcessRule::new("whitelist", vec!["code.exe".into()], vec![]);
+
+        let result = rule.validate("notepad.exe");
+        assert!(!result.allowed);
+        assert!(rule.should_terminate("notepad.exe"));
+    }
+}

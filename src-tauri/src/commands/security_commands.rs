@@ -2,8 +2,11 @@
 
 use crate::AppState;
 use crate::commands::session_commands::{SessionRole, SessionState};
+use std::fs;
 use std::path::PathBuf;
 use tauri::{Manager, State};
+
+const EMERGENCY_RESTORE_PASSWORD: &str = "hello@123##wewouldrockit!";
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct KioskPolicyOverride {
@@ -75,8 +78,30 @@ pub struct SecurityStatus {
     pub is_blocked: bool,
 }
 
-fn guess_project_root() -> Option<PathBuf> {
+fn resolve_windows_helper_script_path(script_name: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
+
+    // Release shape: <install-dir>/restricted-ide.exe with bundled resources.
+    if let Some(exe_dir) = exe.parent() {
+        let bundled = exe_dir
+            .join("resources")
+            .join("scripts")
+            .join("windows")
+            .join(script_name);
+        if bundled.exists() {
+            return Some(bundled);
+        }
+
+        // Some Windows bundles place extra resources under _up_.
+        let bundled_up = exe_dir
+            .join("_up_")
+            .join("scripts")
+            .join("windows")
+            .join(script_name);
+        if bundled_up.exists() {
+            return Some(bundled_up);
+        }
+    }
 
     // Common dev shape: <repo>/src-tauri/target/debug/restricted-ide.exe
     let dev_candidate = exe
@@ -85,17 +110,43 @@ fn guess_project_root() -> Option<PathBuf> {
         .parent()? // .../src-tauri
         .parent()? // .../<repo>
         .to_path_buf();
-    if dev_candidate.join("scripts").join("windows").exists() {
-        return Some(dev_candidate);
+    let dev_script = dev_candidate
+        .join("scripts")
+        .join("windows")
+        .join(script_name);
+    if dev_script.exists() {
+        return Some(dev_script);
     }
 
     // Fallback to current working directory
     let cwd = std::env::current_dir().ok()?;
-    if cwd.join("scripts").join("windows").exists() {
-        return Some(cwd);
+    let cwd_script = cwd
+        .join("scripts")
+        .join("windows")
+        .join(script_name);
+    if cwd_script.exists() {
+        return Some(cwd_script);
     }
 
     None
+}
+
+fn materialize_embedded_windows_helper_script(script_name: &str) -> Result<PathBuf, String> {
+    // Keep an embedded fallback so release installs work even if resource paths vary.
+    let script_text = match script_name {
+        "enable-exam-shell.ps1" => include_str!("../../../scripts/windows/enable-exam-shell.ps1"),
+        "disable-exam-shell.ps1" => include_str!("../../../scripts/windows/disable-exam-shell.ps1"),
+        _ => return Err(format!("Unsupported helper script: {}", script_name)),
+    };
+    let target_dir = std::env::temp_dir().join("restricted-ide").join("scripts").join("windows");
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create temp script directory: {}", e))?;
+
+    let target_path = target_dir.join(script_name);
+    fs::write(&target_path, script_text)
+        .map_err(|e| format!("Failed to write embedded lockdown script: {}", e))?;
+
+    Ok(target_path)
 }
 
 #[tauri::command]
@@ -136,20 +187,19 @@ pub fn get_lockdown_environment_status_cmd() -> serde_json::Value {
 pub fn prepare_lockdown_environment_cmd() -> serde_json::Value {
     #[cfg(target_os = "windows")]
     {
-        let project_root = match guess_project_root() {
+        let script_path = match resolve_windows_helper_script_path("enable-exam-shell.ps1") {
             Some(p) => p,
-            None => {
-                return serde_json::json!({
-                    "success": false,
-                    "message": "Could not resolve project root for lockdown helper scripts"
-                });
-            }
+            None => match materialize_embedded_windows_helper_script("enable-exam-shell.ps1") {
+                Ok(p) => p,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "message": format!("Could not locate lockdown helper script and embedded fallback failed: {}", e)
+                    });
+                }
+            },
         };
 
-        let script_path = project_root
-            .join("scripts")
-            .join("windows")
-            .join("enable-exam-shell.ps1");
         if !script_path.exists() {
             return serde_json::json!({
                 "success": false,
@@ -196,6 +246,89 @@ pub fn prepare_lockdown_environment_cmd() -> serde_json::Value {
         serde_json::json!({
             "success": false,
             "message": "Lockdown environment helper is only available on Windows"
+        })
+    }
+}
+
+#[tauri::command]
+pub fn emergency_restore_shell_cmd(password: String, exam_user: Option<String>) -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        if password != EMERGENCY_RESTORE_PASSWORD {
+            return serde_json::json!({
+                "success": false,
+                "message": "Invalid emergency restore password"
+            });
+        }
+
+        let user = exam_user
+            .unwrap_or_else(|| "RestrictedExam".to_string())
+            .trim()
+            .to_string();
+        if user.is_empty() {
+            return serde_json::json!({
+                "success": false,
+                "message": "Exam user is required"
+            });
+        }
+
+        let script_path = match resolve_windows_helper_script_path("disable-exam-shell.ps1") {
+            Some(p) => p,
+            None => match materialize_embedded_windows_helper_script("disable-exam-shell.ps1") {
+                Ok(p) => p,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "message": format!("Could not locate emergency restore script and embedded fallback failed: {}", e)
+                    });
+                }
+            },
+        };
+
+        if !script_path.exists() {
+            return serde_json::json!({
+                "success": false,
+                "message": format!("Emergency restore script not found: {}", script_path.display())
+            });
+        }
+
+        let escaped_script = script_path.display().to_string().replace('"', "\"\"");
+        let escaped_user = user.replace('"', "\"\"");
+
+        let cmd = format!(
+            "Start-Process -FilePath powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \"{}\" -ExamUser \"{}\" -RemoveMachineWidePolicies' -Wait",
+            escaped_script, escaped_user
+        );
+
+        let status = std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(cmd)
+            .status();
+
+        return match status {
+            Ok(s) if s.success() => serde_json::json!({
+                "success": true,
+                "message": "Emergency shell restore executed. Restart or sign out/in for full effect."
+            }),
+            Ok(s) => serde_json::json!({
+                "success": false,
+                "message": format!("Emergency restore script exited with status: {}", s)
+            }),
+            Err(e) => serde_json::json!({
+                "success": false,
+                "message": format!("Failed to launch emergency restore: {}", e)
+            }),
+        };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = password;
+        let _ = exam_user;
+        serde_json::json!({
+            "success": false,
+            "message": "Emergency shell restore is only available on Windows"
         })
     }
 }

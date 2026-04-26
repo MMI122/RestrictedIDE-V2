@@ -514,6 +514,67 @@ const TeacherMaterials = (() => {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+/* ──── Theme Management ────────────────────────────────────────────── */
+
+const ThemeManager = (() => {
+  const STORAGE_KEY = 'restricted-ide-theme';
+  const LIGHT_THEME = 'light';
+  const DARK_THEME = 'dark';
+
+  function getSystemTheme() {
+    // Check system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return DARK_THEME;
+    }
+    return LIGHT_THEME;
+  }
+
+  function getSavedTheme() {
+    return localStorage.getItem(STORAGE_KEY) || null;
+  }
+
+  function getCurrentTheme() {
+    return document.documentElement.getAttribute('data-theme') || DARK_THEME;
+  }
+
+  function setTheme(theme) {
+    const validTheme = (theme === LIGHT_THEME) ? LIGHT_THEME : DARK_THEME;
+    document.documentElement.setAttribute('data-theme', validTheme);
+    localStorage.setItem(STORAGE_KEY, validTheme);
+    updateThemeButton();
+  }
+
+  function toggleTheme() {
+    const current = getCurrentTheme();
+    const newTheme = current === DARK_THEME ? LIGHT_THEME : DARK_THEME;
+    setTheme(newTheme);
+  }
+
+  function updateThemeButton() {
+    const btn = document.getElementById('btn-toggle-theme');
+    const btnLanding = document.getElementById('btn-toggle-theme-landing');
+    if (btn) {
+      const current = getCurrentTheme();
+      btn.textContent = current === LIGHT_THEME ? '☀️ Light' : '🌙 Dark';
+      btn.title = current === LIGHT_THEME ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+    }
+    if (btnLanding) {
+      const current = getCurrentTheme();
+      btnLanding.textContent = current === LIGHT_THEME ? '☀️ Light' : '🌙 Dark';
+      btnLanding.title = current === LIGHT_THEME ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+    }
+  }
+
+  function init() {
+    const saved = getSavedTheme();
+    const theme = saved || getSystemTheme();
+    setTheme(theme);
+  }
+
+  return { init, setTheme, toggleTheme, getCurrentTheme };
+})();
+
+
 /* ── Initialisation ───────────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -530,6 +591,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Global keyboard shortcuts
     document.addEventListener('keydown', handleGlobalKeys);
+
+    // Theme management
+    ThemeManager.init();
+    $('#btn-toggle-theme').addEventListener('click', () => ThemeManager.toggleTheme());
+    
+    const btnLandingTheme = document.getElementById('btn-toggle-theme-landing');
+    if (btnLandingTheme) {
+      btnLandingTheme.addEventListener('click', () => ThemeManager.toggleTheme());
+    }
 
     // Output toggle
     $('#btn-toggle-output').addEventListener('click', toggleOutput);

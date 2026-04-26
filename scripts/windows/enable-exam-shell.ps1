@@ -8,6 +8,10 @@ param(
 
     [string]$ExamUserPassword = "ExamMode!123",
 
+    [switch]$PropagateInvokerPath = $true,
+
+    [string[]]$ExtraToolPaths = @("C:\MinGW\bin"),
+
     [switch]$ApplyMachineWidePolicies
 )
 
@@ -79,6 +83,31 @@ function Set-RegistryValue {
     New-ItemProperty -Path $KeyPath -Name $Name -Value $Value -PropertyType $propertyType -Force | Out-Null
 }
 
+function Merge-PathEntries {
+    param([string[]]$Segments)
+
+    $seen = @{}
+    $result = New-Object System.Collections.Generic.List[string]
+
+    foreach ($segment in $Segments) {
+        if ([string]::IsNullOrWhiteSpace($segment)) { continue }
+
+        foreach ($entry in ($segment -split ';')) {
+            if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+            $clean = $entry.Trim().Trim('"')
+            if ([string]::IsNullOrWhiteSpace($clean)) { continue }
+
+            $normalized = $clean.ToLowerInvariant()
+            if (-not $seen.ContainsKey($normalized)) {
+                $seen[$normalized] = $true
+                $result.Add($clean)
+            }
+        }
+    }
+
+    return ($result -join ';')
+}
+
 Assert-Admin
 
 if (-not (Test-Path $AppPath)) {
@@ -101,6 +130,34 @@ try {
     $shellKey = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows NT\CurrentVersion\Winlogon"
     $systemPolicyKey = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\System"
     $explorerPolicyKey = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    $examEnvKey = "Registry::HKEY_USERS\$sid\Environment"
+
+    $examUserPath = ""
+    try {
+        $examUserPath = (Get-ItemProperty -Path $examEnvKey -Name "Path" -ErrorAction Stop).Path
+    } catch {
+        $examUserPath = ""
+    }
+
+    $invokerUserPath = ""
+    if ($PropagateInvokerPath) {
+        $invokerUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    }
+
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+
+    $existingTools = @()
+    foreach ($toolPath in $ExtraToolPaths) {
+        if ([string]::IsNullOrWhiteSpace($toolPath)) { continue }
+        if (Test-Path $toolPath) {
+            $existingTools += $toolPath
+        }
+    }
+
+    $mergedExamPath = Merge-PathEntries -Segments @($examUserPath, $invokerUserPath, $machinePath, ($existingTools -join ';'))
+    if (-not [string]::IsNullOrWhiteSpace($mergedExamPath)) {
+        Set-RegistryValue -KeyPath $examEnvKey -Name "Path" -Value $mergedExamPath -Type String
+    }
 
     $shellValue = '"' + $AppPath + '" --kiosk --exam-shell'
 
@@ -130,6 +187,7 @@ try {
     Write-Host "1. Sign in as '$ExamUser'."
     Write-Host "2. Restricted IDE should launch as the shell."
     Write-Host "3. After exams, run disable-exam-shell.ps1 from an admin account."
+    Write-Host "4. PATH for '$ExamUser' has been refreshed from machine/invoker settings (includes detected tool paths like MinGW)."
 }
 finally {
     if ($mountedHive) {

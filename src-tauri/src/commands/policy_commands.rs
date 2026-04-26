@@ -207,16 +207,59 @@ fn html_entity_decode(s: &str) -> String {
 
 fn url_matches_allowlist(url: &str, allowed_urls: &[String]) -> bool {
     let candidate = normalize_url(url);
+    let candidate_parsed = Url::parse(&candidate).ok();
+
     allowed_urls.iter().any(|entry| {
         let pattern = normalize_url(entry);
         if pattern.is_empty() {
             return false;
         }
+
         if let Some(prefix) = pattern.strip_suffix('*') {
-            candidate.starts_with(prefix)
-        } else {
-            candidate == pattern
+            return candidate.starts_with(prefix);
         }
+
+        if candidate == pattern {
+            return true;
+        }
+
+        // For non-wildcard allowlist entries, permit same-origin subpaths.
+        // Example: allow https://docs.python.org/3/ and also /3/tutorial/index.html.
+        let allowed_parsed = match Url::parse(&pattern) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        let cand = match &candidate_parsed {
+            Some(v) => v,
+            None => return false,
+        };
+
+        if !allowed_parsed.scheme().eq_ignore_ascii_case(cand.scheme()) {
+            return false;
+        }
+        if allowed_parsed.host_str().map(|h| h.to_lowercase())
+            != cand.host_str().map(|h| h.to_lowercase())
+        {
+            return false;
+        }
+        if allowed_parsed.port_or_known_default() != cand.port_or_known_default() {
+            return false;
+        }
+
+        let allowed_path = allowed_parsed.path();
+        let candidate_path = cand.path();
+
+        if allowed_path == "/" {
+            return true;
+        }
+
+        let allowed_prefix = if allowed_path.ends_with('/') {
+            allowed_path.to_string()
+        } else {
+            format!("{}/", allowed_path)
+        };
+
+        candidate_path == allowed_path || candidate_path.starts_with(&allowed_prefix)
     })
 }
 

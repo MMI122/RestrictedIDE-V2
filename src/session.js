@@ -5,6 +5,8 @@
 'use strict';
 
 const Session = (() => {
+  const EMERGENCY_RESTORE_PASSWORD = 'hello@123##wewouldrockit!';
+
   // ── Screen references ──
   const screens = {
     landing:    () => $('#landing-screen'),
@@ -103,6 +105,7 @@ const Session = (() => {
       showScreen('sessionList');
       SessionList.load();
     });
+    $('#btn-emergency-restore-shell')?.addEventListener('click', requestEmergencyShellRestore);
     $('#btn-goto-practice')?.addEventListener('click', () => {
       showIDE();
       currentScreen = 'ide';
@@ -125,6 +128,35 @@ const Session = (() => {
     SubmitFlow.init();
     SessionList.init();
     PostSession.init();
+  }
+
+  async function requestEmergencyShellRestore() {
+    const entered = window.prompt('Enter emergency restore password:');
+    if (entered === null) return;
+
+    if (entered !== EMERGENCY_RESTORE_PASSWORD) {
+      alert('Incorrect password. Emergency restore denied.');
+      return;
+    }
+
+    const proceed = window.confirm('This will disable exam-shell restrictions for RestrictedExam and restore normal shell. Continue?');
+    if (!proceed) return;
+
+    try {
+      const result = await invoke('emergency_restore_shell_cmd', {
+        password: entered,
+        examUser: 'RestrictedExam',
+      });
+
+      if (result?.success) {
+        alert((result?.message || 'Emergency restore completed.') + '\n\nPlease restart or sign out/in for full effect.');
+      } else {
+        alert('Emergency restore failed: ' + (result?.message || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Emergency restore shell failed:', err);
+      alert('Emergency restore failed: ' + (err?.message || err));
+    }
   }
 
   return { init, showScreen, showIDE, enterStudentSession, get currentScreen() { return currentScreen; }, get sessionData() { return sessionData; }, set sessionData(v) { sessionData = v; }, get role() { return role; }, set role(v) { role = v; }, get timerInterval() { return timerInterval; }, set timerInterval(v) { timerInterval = v; }, get heartbeatInterval() { return heartbeatInterval; }, set heartbeatInterval(v) { heartbeatInterval = v; }, get pollInterval() { return pollInterval; }, set pollInterval(v) { pollInterval = v; }, get questionCount() { return questionCount; }, set questionCount(v) { questionCount = v; } };

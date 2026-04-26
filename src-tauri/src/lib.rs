@@ -1,10 +1,10 @@
 mod commands;
-mod config;
+pub mod config;
 mod logger;
-mod policy;
+pub mod policy;
 mod runtime;
 mod security;
-mod session;
+pub mod session;
 
 use config::AppConfig;
 use policy::engine::PolicyEngine;
@@ -171,6 +171,7 @@ pub fn run() {
             commands::security_commands::set_kiosk_mode,
             commands::security_commands::get_lockdown_environment_status_cmd,
             commands::security_commands::prepare_lockdown_environment_cmd,
+            commands::security_commands::emergency_restore_shell_cmd,
             // Session
             commands::session_commands::create_session_cmd,
             commands::session_commands::start_session_cmd,
