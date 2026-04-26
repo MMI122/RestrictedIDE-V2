@@ -44,10 +44,17 @@ const SessionList = (() => {
           <td>${Number(s.duration_minutes || 0)} min</td>
           <td>${escapeHtml(created)}</td>
           <td>
-            <button class="landing-btn outline session-list-open-btn" onclick="SessionList.openReview('${escapeHtml(s.id)}')">Open</button>
+            <button class="landing-btn outline session-list-open-btn" data-session-id="${escapeHtml(s.id)}">Open</button>
           </td>
         </tr>`;
     }).join('');
+
+    body.querySelectorAll('.session-list-open-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sessionId = btn.dataset.sessionId;
+        if (sessionId) openReview(sessionId);
+      });
+    });
   }
 
   async function openReview(sessionId) {
